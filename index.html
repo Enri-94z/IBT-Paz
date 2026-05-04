@@ -140,307 +140,55 @@ const SUBPROJECTS=[
   {id:'D',code:'D',desc:'D · ProyectoFer',color:'#185FA5',bg:'#E6F1FB',tc:'#042C53'}
 ];
 const DAYS=['Lun','Mar','Mié','Jue','Vie','Sáb'];
-const TIME_SLOTS=['Antes 8am','8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','Después 7pm'];
 
-let state={
-  view:'home', mainTab:'calendario', weekOffset:0,
-  selectedPerson:null, reportFilter:'person',
-  tasks:[], syncing:false
-};
+// Filas por hora completa: pre, 8:00..19:00, post
+function buildSlots(){
+  const s=[{key:'pre',label:'Antes 8am',hour:-1}];
+  for(let h=8;h<=19;h++) s.push({key:`${h}:00`,label:`${h}:00`,hour:h});
+  s.push({key:'post',label:'Después 7pm',hour:99});
+  return s;
+}
+const TIME_SLOTS=buildSlots();
 
-// ── API helpers ──────────────────────────────────────────────
-const headers={'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
+function timeToMinutes(str){
+  if(!str)return null;
+  const [h,m]=str.split(':').map(Number);
+  return h*60+(m||0);
+}
+function slotHour(slot){return slot.hour;}
 
-async function apiFetch(path,opts={}){
-  setSyncing(true);
-  try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{headers,...opts});
-    if(!r.ok){const e=await r.text();throw new Error(e);}
-    const ct=r.headers.get('content-type')||'';
-    return ct.includes('json')?await r.json():null;
-  }finally{setSyncing(false);}
-}
-
-async function loadTasks(){
-  try{
-    const data=await apiFetch('tasks?select=*&order=date.asc');
-    state.tasks=data||[];
-    setSync('ok');
-    render();
-  }catch(e){setSync('error');showToast('Error al cargar tareas');}
-}
-
-async function createTask(t){
-  try{
-    const res=await apiFetch('tasks',{method:'POST',body:JSON.stringify(t)});
-    if(res&&res[0])state.tasks.push(res[0]);
-    render();showToast('Tarea creada');
-  }catch(e){showToast('Error al guardar');}
-}
-
-async function updateTask(id,changes){
-  try{
-    const res=await apiFetch(`tasks?id=eq.${id}`,{method:'PATCH',body:JSON.stringify(changes)});
-    const idx=state.tasks.findIndex(t=>t.id===id);
-    if(idx>=0&&res&&res[0])state.tasks[idx]=res[0];
-    render();
-  }catch(e){showToast('Error al actualizar');}
-}
-
-async function deleteTask(id){
-  try{
-    await apiFetch(`tasks?id=eq.${id}`,{method:'DELETE'});
-    state.tasks=state.tasks.filter(t=>t.id!==id);
-    closeModal();render();showToast('Tarea eliminada');
-  }catch(e){showToast('Error al eliminar');}
-}
-
-async function uploadEvidence(taskId,file){
-  const path=`${taskId}/${Date.now()}_${file.name}`;
-  setSyncing(true);
-  try{
-    const r=await fetch(`${STORAGE_URL}/object/evidence/${path}`,{
-      method:'POST',
-      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':file.type},
-      body:file
-    });
-    if(!r.ok)throw new Error('Upload failed');
-    const t=state.tasks.find(x=>x.id===taskId);
-    const evs=t.evidence_paths||[];
-    evs.push(path);
-    await updateTask(taskId,{evidence_paths:evs});
-    showToast('Evidencia subida');
-  }catch(e){showToast('Error al subir archivo');}
-  finally{setSyncing(false);}
-}
-
-async function deleteEvidence(taskId,path){
-  try{
-    await fetch(`${STORAGE_URL}/object/evidence/${path}`,{method:'DELETE',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
-    const t=state.tasks.find(x=>x.id===taskId);
-    const evs=(t.evidence_paths||[]).filter(p=>p!==path);
-    await updateTask(taskId,{evidence_paths:evs});
-    showToast('Evidencia eliminada');
-  }catch(e){showToast('Error al eliminar evidencia');}
-}
-
-function evidenceUrl(path){return`${STORAGE_URL}/object/public/evidence/${path}`;}
-
-// ── Sync / realtime via polling ───────────────────────────────
-function setSyncing(v){
-  state.syncing=v;
-  const dot=document.getElementById('sync-dot');
-  const txt=document.getElementById('sync-text');
-  if(!dot)return;
-  dot.className='sync-dot'+(v?' syncing':'');
-  txt.textContent=v?'Sincronizando...':'Sincronizado';
-}
-function setSync(s){
-  const dot=document.getElementById('sync-dot');
-  const txt=document.getElementById('sync-text');
-  if(!dot)return;
-  if(s==='ok'){dot.className='sync-dot';txt.textContent='Sincronizado';}
-  else{dot.className='sync-dot error';txt.textContent='Sin conexión';}
-}
-setInterval(loadTasks,30000);
-
-function showToast(msg){
-  const t=document.getElementById('toast');
-  t.textContent=msg;t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),2500);
-}
-
-// ── Date helpers ──────────────────────────────────────────────
-function getWeekStart(offset){
-  const now=new Date(),day=now.getDay(),mon=new Date(now);
-  mon.setDate(now.getDate()-(day===0?6:day-1)+(offset*7));
-  mon.setHours(0,0,0,0);return mon;
-}
-function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
-function fmtDate(d){return d.toLocaleDateString('es-MX',{day:'numeric',month:'short'});}
-function fmtDateShort(str){
-  if(!str)return'';
-  const d=new Date(str+'T12:00:00');
-  return d.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
-}
-function weekLabel(o){const s=getWeekStart(o),e=addDays(s,5);return`${fmtDate(s)} – ${fmtDate(e)}`;}
-function dateKey(d){return d.toISOString().slice(0,10);}
-function todayKey(){return dateKey(new Date());}
-
-// ── Auto-move missed tasks ─────────────────────────────────────
-async function autoMoveTasks(){
-  const today=todayKey();
-  const toMove=state.tasks.filter(t=>!t.done&&t.date<today);
-  for(const t of toMove){
-    const missed=t.missed_dates||[];
-    if(!missed.includes(t.date))missed.push(t.date);
-    await updateTask(t.id,{date:today,missed_dates:missed});
-  }
-}
-
-// ── Stats ─────────────────────────────────────────────────────
-function calcStats(tasks){
-  const total=tasks.length,done=tasks.filter(t=>t.done).length,pct=total?Math.round((done/total)*100):0;
-  return{total,done,pct};
-}
-function getMissedCount(pid){
-  return state.tasks.filter(t=>t.person===pid&&t.missed_dates&&t.missed_dates.length>0).length;
-}
-function getMissedByDay(pid){
-  const map={};
-  state.tasks.filter(t=>t.person===pid&&t.missed_dates&&t.missed_dates.length>0)
-    .forEach(t=>(t.missed_dates||[]).forEach(d=>{map[d]=(map[d]||0)+1;}));
-  return map;
-}
-function getTasksForDate(pid,dk){
-  return state.tasks.filter(t=>t.person===pid&&t.date===dk).sort((a,b)=>a.priority-b.priority);
-}
-function getTasksForWeek(pid,offset){
-  const s=getWeekStart(offset);
-  const keys=Array.from({length:6},(_,i)=>dateKey(addDays(s,i)));
-  return state.tasks.filter(t=>t.person===pid&&keys.includes(t.date));
-}
-
-// ── Modal ─────────────────────────────────────────────────────
-let modalTask=null;
-function openModal(opts={}){
-  modalTask=opts.editId?state.tasks.find(t=>t.id===opts.editId):null;
-  const t=modalTask;
-  const defPerson=t?t.person:(opts.prefPerson||PERSONS[0].id);
-  const defDate=t?t.date:(opts.prefDate||todayKey());
-  const defSlot=t?t.slot:(opts.prefSlot||'8:00');
-  const defPrio=t?t.priority:1;
-  const defTs=t&&t.time_start?t.time_start:'';
-  const defTe=t&&t.time_end?t.time_end:'';
-  const defPct=t?t.pct:0;
-  const defDesc=t?t.description:'';
-  const defSPs=t&&t.subprojects?t.subprojects:[];
-  const evs=t&&t.evidence_paths?t.evidence_paths:[];
-
-  document.getElementById('modal-content').innerHTML=`
-    <div class="modal-title">${t?'Editar tarea':'Nueva tarea'}</div>
-    <div class="fg"><div class="fl">Descripción</div><input class="fi" id="m-desc" value="${defDesc.replace(/"/g,'&quot;')}" placeholder="¿Qué hay que hacer?"></div>
-    <div class="fi-row">
-      <div class="fg"><div class="fl">Persona</div><select class="fi" id="m-person">${PERSONS.map(p=>`<option value="${p.id}"${defPerson===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>
-      <div class="fg"><div class="fl">Fecha</div><input class="fi" type="date" id="m-date" value="${defDate}"></div>
-    </div>
-    <div class="fi-row">
-      <div class="fg"><div class="fl">Franja horaria</div><select class="fi" id="m-slot">${TIME_SLOTS.map(s=>`<option value="${s}"${defSlot===s?' selected':''}>${s}</option>`).join('')}</select></div>
-      <div class="fg"><div class="fl">Prioridad</div><select class="fi" id="m-priority">${PRIO.map(p=>`<option value="${p.n}"${defPrio===p.n?' selected':''}>P${p.n} · ${['Alta','Media-alta','Media','Baja','Mínima'][p.n-1]}</option>`).join('')}</select></div>
-    </div>
-    <div class="fi-row">
-      <div class="fg"><div class="fl">Hora inicio</div><input class="fi" type="time" id="m-tstart" value="${defTs}"></div>
-      <div class="fg"><div class="fl">Hora fin</div><input class="fi" type="time" id="m-tend" value="${defTe}"></div>
-    </div>
-    <div class="fg"><div class="fl">Subproyectos</div>
-      <div class="sp-checks">${SUBPROJECTS.map(sp=>`
-        <label class="sp-check-item">
-          <input type="checkbox" class="sp-cb" value="${sp.id}"${defSPs.includes(sp.id)?' checked':''}>
-          <span class="sp-badge" style="background:${sp.bg};color:${sp.tc};border-color:${sp.color}">${sp.code}</span>
-          <span>${sp.desc}</span>
-        </label>`).join('')}
-      </div>
-    </div>
-    <div class="fg"><div class="fl">% avance</div>
-      <div class="pct-row">
-        <input type="range" min="0" max="100" step="5" value="${defPct}" id="m-pct" oninput="document.getElementById('m-pct-v').textContent=this.value+'%'">
-        <span class="pct-val" id="m-pct-v">${defPct}%</span>
-      </div>
-    </div>
-    ${t?`<div class="fg"><div class="fl">Evidencias</div>
-      <div class="evidence-list" id="ev-list">
-        ${evs.map(path=>{
-          const fname=path.split('/').pop();
-          return`<div class="evidence-item">
-            <a href="${evidenceUrl(path)}" target="_blank">${fname}</a>
-            <button class="ev-del" onclick="deleteEvidence('${t.id}','${path}')" title="Eliminar">×</button>
-          </div>`;
-        }).join('')}
-      </div>
-      <input type="file" id="m-evidence" multiple style="margin-top:6px;font-size:12px" accept="image/*,.pdf,.xlsx,.csv,.txt">
-    </div>`:''}
-    <div class="mac">
-      ${t?`<button class="btn btn-d" onclick="deleteTask('${t.id}')">Eliminar</button>`:''}
-      <button class="btn" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-p" onclick="saveModalTask('${t?t.id:''}')">Guardar</button>
-    </div>`;
-  document.getElementById('modal-overlay').classList.add('open');
-}
-
-function closeModal(){
-  document.getElementById('modal-overlay').classList.remove('open');
-  modalTask=null;
-}
-
-async function saveModalTask(editId){
-  const desc=document.getElementById('m-desc').value.trim();
-  if(!desc)return;
-  const person=document.getElementById('m-person').value;
-  const date=document.getElementById('m-date').value;
-  const slot=document.getElementById('m-slot').value;
-  const priority=parseInt(document.getElementById('m-priority').value);
-  const time_start=document.getElementById('m-tstart').value;
-  const time_end=document.getElementById('m-tend').value;
-  const pct=parseInt(document.getElementById('m-pct').value);
-  const subprojects=Array.from(document.querySelectorAll('.sp-cb:checked')).map(x=>x.value);
-  const done=pct===100;
-  const payload={description:desc,person,date,slot,priority,time_start,time_end,pct,done,subprojects};
-
-  closeModal();
-  if(editId){
-    await updateTask(editId,payload);
-    const evInput=document.getElementById('m-evidence');
-    if(evInput&&evInput.files.length>0){
-      for(const f of evInput.files) await uploadEvidence(editId,f);
-    }
-  } else {
-    payload.missed_dates=[];
-    payload.evidence_paths=[];
-    await createTask(payload);
-  }
-}
-
-// ── Render helpers ─────────────────────────────────────────────
-function spBadges(sps){
-  if(!sps||!sps.length)return'';
-  return sps.map(sid=>{
-    const sp=SUBPROJECTS.find(x=>x.id===sid);
-    if(!sp)return'';
-    return`<span class="sp-badge" style="background:${sp.bg};color:${sp.tc};border-color:${sp.color}">${sp.code}</span>`;
-  }).join(' ');
-}
-
-function renderTaskBlock(t){
-  const p=PERSONS.find(x=>x.id===t.person),pr=PRIO[t.priority-1];
-  const timeStr=t.time_start&&t.time_end?`${t.time_start}–${t.time_end}`:'';
-  const missed=t.missed_dates&&t.missed_dates.length>0?`<span class="task-moved-mark">movida ${t.missed_dates.length}x</span>`:'';
-  const evCount=t.evidence_paths&&t.evidence_paths.length>0?`<span style="font-size:8px;background:#E6F1FB;color:#0C447C;padding:1px 4px;border-radius:3px">${t.evidence_paths.length} arch.</span>`:'';
-  return`<div class="task-block${t.done?' task-done':''}" style="background:${pr.bg};border-left-color:${pr.color}" onclick="openModal({editId:'${t.id}'})">
-    <div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap">
-      <span style="font-size:9px;font-weight:600;background:${pr.color};color:#fff;padding:1px 4px;border-radius:3px">${pr.label}</span>
-      <span style="font-size:9px;font-weight:600;background:${p.bg};color:${p.tc};padding:1px 4px;border-radius:3px;border:1px solid ${p.color}">${p.initial}</span>
-      ${spBadges(t.subprojects)}${evCount}
-    </div>
-    <div class="task-block-name" style="color:${pr.tc};margin-top:2px">${t.description}</div>
-    ${timeStr?`<div style="font-size:9px;color:${pr.tc};opacity:.75">${timeStr}</div>`:''}
-    ${missed}
-    <div class="bar-wrap"><div class="bar-fill" style="width:${t.pct}%;background:${pr.color}"></div></div>
-  </div>`;
+// Which hour slot does a task belong to (by start time)
+function taskStartSlot(t){
+  if(!t.time_start) return t.slot||'pre';
+  const m=timeToMinutes(t.time_start);
+  const h=Math.floor(m/60);
+  if(h<8) return 'pre';
+  if(h>=19) return 'post';
+  return `${h}:00`;
 }
 
 function renderCalendar(filterPid){
   const ws=getWeekStart(state.weekOffset);
   const dates=Array.from({length:6},(_,i)=>addDays(ws,i));
   const dkeys=dates.map(dateKey);
+
+  // Build task map: slotKey -> dayKey -> [tasks]
+  const taskMap={};
+  TIME_SLOTS.forEach(s=>{taskMap[s.key]={};dkeys.forEach(dk=>{taskMap[s.key][dk]=[];});});
+  state.tasks.filter(t=>dkeys.includes(t.date)&&(filterPid?t.person===filterPid:true)).forEach(t=>{
+    const sk=taskStartSlot(t);
+    if(taskMap[sk]&&taskMap[sk][t.date]!==undefined) taskMap[sk][t.date].push(t);
+  });
+
   let html=`<div class="legend" style="margin-bottom:10px">
     ${PRIO.map(p=>`<span class="legend-item"><span class="legend-dot" style="background:${p.color}"></span>${p.label}</span>`).join('')}
     <span style="margin-left:8px;display:flex;gap:4px">${PERSONS.map(p=>`<span style="background:${p.bg};color:${p.tc};padding:1px 6px;border-radius:4px;border:1px solid ${p.color};font-size:10px;font-weight:600">${p.initial}</span>`).join('')}</span>
     <span style="display:flex;gap:4px">${SUBPROJECTS.map(sp=>`<span class="sp-badge" style="background:${sp.bg};color:${sp.tc};border-color:${sp.color}">${sp.code}</span>`).join('')}</span>
   </div>
   <div class="cal-wrap"><table class="cal-table">
-    <thead><tr><th style="width:64px"></th>${dates.map((d,i)=>{
+    <thead><tr><th style="width:58px"></th>${dates.map((d,i)=>{
       const dk=dkeys[i];
-      const allT=filterPid?getTasksForDate(filterPid,dk):PERSONS.flatMap(p=>getTasksForDate(p.id,dk));
+      const allT=state.tasks.filter(t=>t.date===dk&&(filterPid?t.person===filterPid:true));
       const missed=allT.filter(t=>t.missed_dates&&t.missed_dates.length>0).length;
       const isToday=dk===todayKey();
       return`<th style="${isToday?'background:#E6F1FB;':''}">
@@ -448,23 +196,55 @@ function renderCalendar(filterPid){
         ${missed>0?`<br><span style="font-size:9px;background:#FCEBEB;color:#791F1F;padding:1px 4px;border-radius:5px;font-weight:600">${missed} incumpl.</span>`:''}
       </th>`;
     }).join('')}</tr></thead><tbody>`;
+
   TIME_SLOTS.forEach(slot=>{
-    html+=`<tr><td class="time-cell">${slot}</td>`;
-    dkeys.forEach((dk,di)=>{
+    const isExtra=slot.key==='pre'||slot.key==='post';
+    html+=`<tr>
+      <td class="time-cell" style="${isExtra?'color:#bbb;font-size:9px;':'font-weight:600;color:#666;'}border-top:1px solid #e5e5e3;">${slot.label}</td>`;
+    dkeys.forEach(dk=>{
       const isToday=dk===todayKey();
-      const pids=filterPid?[filterPid]:PERSONS.map(x=>x.id);
-      let tasks=pids.flatMap(pid=>getTasksForDate(pid,dk).filter(t=>t.slot===slot));
+      const tasks=(taskMap[slot.key]&&taskMap[slot.key][dk])||[];
       tasks.sort((a,b)=>a.priority-b.priority);
-      html+=`<td style="${isToday?'background:#fafeff;':''}">
-        ${tasks.map(t=>renderTaskBlock(t)).join('')}
-        <button class="add-cell-btn" onclick="openModal({prefDate:'${dk}',prefSlot:'${slot}'${filterPid?`,prefPerson:'${filterPid}'`:''}})" title="Agregar tarea">+</button>
-      </td>`;
+      html+=`<td style="${isToday?'background:#fafeff;':''}border-top:1px solid #e5e5e3;padding:3px;vertical-align:top;">`;
+      if(tasks.length>0){
+        // Horizontal layout: flex row, each task is a pill
+        html+=`<div style="display:flex;flex-wrap:wrap;gap:3px;">`;
+        tasks.forEach(t=>{
+          const p=PERSONS.find(x=>x.id===t.person);
+          const pr=PRIO[t.priority-1];
+          const timeStr=t.time_start&&t.time_end?`${t.time_start}–${t.time_end}`:'';
+          const evCount=t.evidence_paths&&t.evidence_paths.length>0?` · ${t.evidence_paths.length}arch`:'';
+          const missed=t.missed_dates&&t.missed_dates.length>0?` · mov${t.missed_dates.length}x`:'';
+          html+=`<div onclick="openModal({editId:'${t.id}'})" title="${t.description}${timeStr?' ('+timeStr+')':''}" style="
+            background:${pr.bg};border-left:3px solid ${pr.color};border-radius:4px;
+            padding:3px 6px;cursor:pointer;font-size:10px;line-height:1.35;
+            min-width:80px;max-width:160px;flex:1;
+            ${t.done?'opacity:.5;':''}">
+            <div style="display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-bottom:1px">
+              <span style="background:${pr.color};color:#fff;padding:0 3px;border-radius:2px;font-size:8px;font-weight:700">${pr.label}</span>
+              <span style="background:${p.bg};color:${p.tc};padding:0 3px;border-radius:2px;font-size:8px;font-weight:700;border:1px solid ${p.color}">${p.initial}</span>
+              ${spBadges(t.subprojects)}
+            </div>
+            <div style="font-weight:600;color:${pr.tc};${t.done?'text-decoration:line-through;':''};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.description}</div>
+            ${timeStr?`<div style="font-size:9px;color:${pr.tc};opacity:.75">${timeStr}${evCount}${missed}</div>`:''}
+            <div style="height:2px;background:rgba(0,0,0,.1);border-radius:1px;margin-top:2px">
+              <div style="height:100%;width:${t.pct}%;background:${pr.color};border-radius:1px"></div>
+            </div>
+          </div>`;
+        });
+        html+=`</div>`;
+      }
+      html+=`<button style="width:100%;background:none;border:none;color:#ddd;font-size:14px;cursor:pointer;padding:1px 0;line-height:1;opacity:0;transition:opacity .1s;display:block"
+        onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0"
+        onclick="openModal({prefDate:'${dk}',prefSlot:'${slot.key}'${filterPid?`,prefPerson:'${filterPid}'`:''}})" title="Agregar tarea aquí">+</button>`;
+      html+=`</td>`;
     });
     html+=`</tr>`;
   });
   html+=`</tbody></table></div>`;
   return html;
 }
+
 
 function renderHomeStats(){
   const today=todayKey(),ws=getWeekStart(0);
@@ -473,6 +253,7 @@ function renderHomeStats(){
   const wst=calcStats(state.tasks.filter(t=>wKeys.includes(t.date)));
   return`<div class="stat-row">
     <div class="stat-section">
+      <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:2px">Tareas del día</div>
       <div class="stat-section-title">Hoy · ${fmtDate(new Date())}</div>
       <div class="stat-nums">
         <div class="stat-card"><div class="stat-num">${ds.done}</div><div class="stat-lbl">Completadas</div></div>
@@ -481,6 +262,7 @@ function renderHomeStats(){
       </div>
     </div>
     <div class="stat-section">
+      <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:2px">Tareas de la semana</div>
       <div class="stat-section-title">Esta semana · ${weekLabel(0)}</div>
       <div class="stat-nums">
         <div class="stat-card"><div class="stat-num">${wst.done}</div><div class="stat-lbl">Completadas</div></div>
@@ -600,7 +382,10 @@ function render(){
   if(state.view==='home'){
     app.innerHTML=`
       ${renderHomeStats()}
-      <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Equipo · semana actual</div>
+      <div>
+        <div style="font-size:15px;font-weight:600;color:#1a1a1a">Tareas por persona · semana actual</div>
+        <div style="font-size:10px;color:#888;font-weight:500;margin-top:1px">Clic en una persona para ver su calendario individual</div>
+      </div>
       ${renderPersonRow()}
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div>

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LT01 · Gestor de proyecto</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:100vh}
+.topbar{background:#fff;border-bottom:1px solid #e5e5e3;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.topbar-title{font-size:15px;font-weight:600;color:#1a1a1a;display:flex;align-items:center;gap:8px}
+.topbar-badge{font-size:11px;background:#E6F1FB;color:#0C447C;padding:2px 8px;border-radius:10px;font-weight:500}
+.topbar-right{display:flex;align-items:center;gap:10px;font-size:12px;color:#888}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:#639922;display:inline-block;margin-right:4px}
+.sync-dot.syncing{background:#EF9F27;animation:pulse 1s infinite}
+.sync-dot.error{background:#E24B4A}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.container{max-width:1100px;margin:0 auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+.stat-row{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.stat-section{background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e5e3}
+.stat-section-title{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;font-weight:600}
+.stat-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat-card{background:#f5f5f3;border-radius:8px;padding:10px;text-align:center}
+.stat-num{font-size:22px;font-weight:600;color:#1a1a1a}
+.stat-lbl{font-size:10px;color:#888;margin-top:2px}
+.person-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.person-chip{border-radius:10px;padding:12px 8px;cursor:pointer;border:1.5px solid #e5e5e3;background:#fff;transition:border-color .15s}
+.person-chip:hover{border-color:#ccc}
+.person-chip.active{border-width:2px}
+.person-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;margin:0 auto 7px}
+.person-chip-name{font-size:12px;font-weight:600;color:#1a1a1a;text-align:center}
+.person-stats{display:flex;justify-content:center;gap:6px;margin-top:4px}
+.ps-num{font-size:11px;color:#888}
+.missed-badge{display:inline-block;margin-top:5px;font-size:10px;padding:2px 7px;border-radius:8px;background:#FCEBEB;color:#791F1F;font-weight:600}
+.bar-wrap{height:3px;background:#eee;border-radius:2px;margin-top:5px}
+.bar-fill{height:100%;border-radius:2px;transition:width .3s}
+.main-tabs{display:flex;gap:2px;border-bottom:1px solid #e5e5e3}
+.main-tab{padding:9px 16px;font-size:13px;cursor:pointer;border:none;background:transparent;color:#888;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;font-weight:500}
+.main-tab.active{color:#1a1a1a;border-bottom-color:#185FA5}
+.week-tabs{display:flex;gap:4px;background:#f5f5f3;border-radius:8px;padding:4px}
+.week-tab{flex:1;padding:6px 4px;border-radius:6px;font-size:11px;cursor:pointer;border:none;background:transparent;color:#888;font-family:inherit;text-align:center;transition:all .15s;font-weight:500}
+.week-tab.active{background:#fff;color:#1a1a1a;font-weight:600;border:1px solid #e5e5e3}
+.cal-wrap{overflow-x:auto;border-radius:10px;border:1px solid #e5e5e3}
+.cal-table{width:100%;border-collapse:collapse;min-width:600px;background:#fff}
+.cal-table th{font-size:11px;font-weight:600;color:#888;padding:8px 4px;text-align:center;border-bottom:1px solid #e5e5e3;border-right:1px solid #f0f0f0;background:#fafaf8}
+.cal-table td{vertical-align:top;border-bottom:1px solid #f5f5f3;border-right:1px solid #f5f5f3;padding:3px;min-width:90px}
+.time-cell{font-size:10px;color:#aaa;padding:5px 7px;text-align:right;background:#fafaf8;white-space:nowrap;width:64px;font-weight:500;vertical-align:middle;border-right:1px solid #e5e5e3}
+.task-block{border-radius:5px;padding:4px 6px;margin:2px 0;cursor:pointer;font-size:10px;line-height:1.35;border-left:3px solid transparent;transition:opacity .1s}
+.task-block:hover{opacity:.85}
+.task-block-name{font-weight:600}
+.task-done .task-block-name{text-decoration:line-through;opacity:.5}
+.task-moved-mark{font-size:8px;opacity:.65;font-style:italic}
+.add-cell-btn{width:100%;text-align:center;color:#ccc;font-size:18px;cursor:pointer;padding:2px;border:none;background:transparent;opacity:0;transition:opacity .1s;line-height:1;font-family:inherit}
+td:hover .add-cell-btn{opacity:1}
+.legend{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:10px;color:#888}
+.legend-item{display:flex;align-items:center;gap:3px}
+.legend-dot{width:8px;height:8px;border-radius:2px;display:inline-block}
+.sp-badge{font-size:9px;padding:1px 5px;border-radius:4px;font-weight:600;border:1px solid transparent}
+.report-card{background:#fff;border:1px solid #e5e5e3;border-radius:12px;padding:16px}
+.report-task-row{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f3}
+.report-task-row:last-child{border-bottom:none}
+.filter-chip{font-size:11px;padding:5px 10px;border-radius:10px;cursor:pointer;border:1px solid #e5e5e3;background:transparent;color:#888;font-family:inherit;transition:all .1s;font-weight:500}
+.filter-chip.active{background:#185FA5;color:#fff;border-color:#185FA5}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:14px;padding:22px;width:380px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.15)}
+.modal-title{font-size:16px;font-weight:600;color:#1a1a1a;margin-bottom:16px}
+.fg{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.fl{font-size:11px;color:#888;font-weight:500}
+.fi{padding:8px 10px;border:1px solid #e5e5e3;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;color:#1a1a1a;width:100%;outline:none}
+.fi:focus{border-color:#185FA5}
+.fi-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mac{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.btn{padding:7px 16px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600;border:1px solid #e5e5e3;background:transparent;color:#1a1a1a;transition:all .1s}
+.btn:hover{background:#f5f5f3}
+.btn-p{background:#185FA5;color:#fff;border-color:#185FA5}
+.btn-p:hover{background:#0C447C;border-color:#0C447C}
+.btn-d{background:#A32D2D;color:#fff;border-color:#A32D2D}
+.btn-d:hover{background:#791F1F}
+.pct-row{display:flex;align-items:center;gap:8px}
+.pct-row input[type=range]{flex:1;accent-color:#185FA5}
+.pct-val{font-size:12px;font-weight:600;color:#1a1a1a;min-width:36px}
+.sp-checks{display:flex;flex-direction:column;gap:6px;max-height:120px;overflow-y:auto;border:1px solid #e5e5e3;border-radius:8px;padding:8px}
+.sp-check-item{display:flex;align-items:center;gap:7px;font-size:12px;color:#1a1a1a;cursor:pointer}
+.sp-check-item input{accent-color:#185FA5;cursor:pointer}
+.evidence-list{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.evidence-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#185FA5;padding:4px 7px;background:#E6F1FB;border-radius:6px}
+.evidence-item a{color:#185FA5;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.evidence-item a:hover{text-decoration:underline}
+.ev-del{background:none;border:none;color:#A32D2D;cursor:pointer;font-size:14px;padding:0;line-height:1}
+.toast{position:fixed;bottom:24px;right:24px;background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:500;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.loading-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(245,245,243,.8);z-index:50;display:flex;align-items:center;justify-content:center;font-size:14px;color:#888;font-weight:500}
+.missed-day-chip{font-size:10px;background:#FCEBEB;color:#791F1F;padding:2px 7px;border-radius:8px;display:inline-block;margin:2px;font-weight:500}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">
+    LT01
+    <span class="topbar-badge">Proyecto general</span>
+  </div>
+  <div class="topbar-right">
+    <span id="sync-indicator"><span class="sync-dot" id="sync-dot"></span><span id="sync-text">Conectando...</span></span>
+    <span id="topbar-date"></span>
+  </div>
+</div>
+
+<div class="container" id="app"></div>
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://lyxpcbrbyhzgxoyjvoxi.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5eHBjYnJieWh6Z3hveWp2b3hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjYwODUsImV4cCI6MjA5MzUwMjA4NX0.GCJPRfMR7MLoNiDGo1ATEHGCMzWE7iPC_QIe-AV2dGU';
+const STORAGE_URL = `${SUPABASE_URL}/storage/v1`;
+
+const PERSONS=[
+  {id:'g',name:'Gabriela',initial:'G',initials:'GA',color:'#185FA5',bg:'#E6F1FB',tc:'#0C447C'},
+  {id:'a',name:'Anayeli',initial:'A',initials:'AN',color:'#0F6E56',bg:'#E1F5EE',tc:'#085041'},
+  {id:'f',name:'Fernanda',initial:'F',initials:'FE',color:'#993C1D',bg:'#FAECE7',tc:'#712B13'},
+  {id:'e',name:'Enrique',initial:'E',initials:'EN',color:'#854F0B',bg:'#FAEEDA',tc:'#633806'}
+];
+const PRIO=[
+  {n:1,label:'P1',color:'#E24B4A',bg:'#FCEBEB',tc:'#791F1F'},
+  {n:2,label:'P2',color:'#EF9F27',bg:'#FAEEDA',tc:'#633806'},
+  {n:3,label:'P3',color:'#639922',bg:'#EAF3DE',tc:'#27500A'},
+  {n:4,label:'P4',color:'#378ADD',bg:'#E6F1FB',tc:'#0C447C'},
+  {n:5,label:'P5',color:'#888780',bg:'#F1EFE8',tc:'#444441'}
+];
+const SUBPROJECTS=[
+  {id:'general',code:'LT01',desc:'Proyecto general LT01',color:'#5F5E5A',bg:'#F1EFE8',tc:'#2C2C2A'},
+  {id:'A',code:'A',desc:'A · LandingPad',color:'#534AB7',bg:'#EEEDFE',tc:'#26215C'},
+  {id:'B',code:'B',desc:'B · Selección clonal',color:'#0F6E56',bg:'#E1F5EE',tc:'#04342C'},
+  {id:'C',code:'C',desc:'C · HA en CHO',color:'#993C1D',bg:'#FAECE7',tc:'#4A1B0C'},
+  {id:'D',code:'D',desc:'D · ProyectoFer',color:'#185FA5',bg:'#E6F1FB',tc:'#042C53'}
+];
+const DAYS=['Lun','Mar','Mié','Jue','Vie','Sáb'];
+const TIME_SLOTS=['Antes 8am','8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','Después 7pm'];
+
+let state={
+  view:'home', mainTab:'calendario', weekOffset:0,
+  selectedPerson:null, reportFilter:'person',
+  tasks:[], syncing:false
+};
+
+// ── API helpers ──────────────────────────────────────────────
+const headers={'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
+
+async function apiFetch(path,opts={}){
+  setSyncing(true);
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{headers,...opts});
+    if(!r.ok){const e=await r.text();throw new Error(e);}
+    const ct=r.headers.get('content-type')||'';
+    return ct.includes('json')?await r.json():null;
+  }finally{setSyncing(false);}
+}
+
+async function loadTasks(){
+  try{
+    const data=await apiFetch('tasks?select=*&order=date.asc');
+    state.tasks=data||[];
+    setSync('ok');
+    render();
+  }catch(e){setSync('error');showToast('Error al cargar tareas');}
+}
+
+async function createTask(t){
+  try{
+    const res=await apiFetch('tasks',{method:'POST',body:JSON.stringify(t)});
+    if(res&&res[0])state.tasks.push(res[0]);
+    render();showToast('Tarea creada');
+  }catch(e){showToast('Error al guardar');}
+}
+
+async function updateTask(id,changes){
+  try{
+    const res=await apiFetch(`tasks?id=eq.${id}`,{method:'PATCH',body:JSON.stringify(changes)});
+    const idx=state.tasks.findIndex(t=>t.id===id);
+    if(idx>=0&&res&&res[0])state.tasks[idx]=res[0];
+    render();
+  }catch(e){showToast('Error al actualizar');}
+}
+
+async function deleteTask(id){
+  try{
+    await apiFetch(`tasks?id=eq.${id}`,{method:'DELETE'});
+    state.tasks=state.tasks.filter(t=>t.id!==id);
+    closeModal();render();showToast('Tarea eliminada');
+  }catch(e){showToast('Error al eliminar');}
+}
+
+async function uploadEvidence(taskId,file){
+  const path=`${taskId}/${Date.now()}_${file.name}`;
+  setSyncing(true);
+  try{
+    const r=await fetch(`${STORAGE_URL}/object/evidence/${path}`,{
+      method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':file.type},
+      body:file
+    });
+    if(!r.ok)throw new Error('Upload failed');
+    const t=state.tasks.find(x=>x.id===taskId);
+    const evs=t.evidence_paths||[];
+    evs.push(path);
+    await updateTask(taskId,{evidence_paths:evs});
+    showToast('Evidencia subida');
+  }catch(e){showToast('Error al subir archivo');}
+  finally{setSyncing(false);}
+}
+
+async function deleteEvidence(taskId,path){
+  try{
+    await fetch(`${STORAGE_URL}/object/evidence/${path}`,{method:'DELETE',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const t=state.tasks.find(x=>x.id===taskId);
+    const evs=(t.evidence_paths||[]).filter(p=>p!==path);
+    await updateTask(taskId,{evidence_paths:evs});
+    showToast('Evidencia eliminada');
+  }catch(e){showToast('Error al eliminar evidencia');}
+}
+
+function evidenceUrl(path){return`${STORAGE_URL}/object/public/evidence/${path}`;}
+
+// ── Sync / realtime via polling ───────────────────────────────
+function setSyncing(v){
+  state.syncing=v;
+  const dot=document.getElementById('sync-dot');
+  const txt=document.getElementById('sync-text');
+  if(!dot)return;
+  dot.className='sync-dot'+(v?' syncing':'');
+  txt.textContent=v?'Sincronizando...':'Sincronizado';
+}
+function setSync(s){
+  const dot=document.getElementById('sync-dot');
+  const txt=document.getElementById('sync-text');
+  if(!dot)return;
+  if(s==='ok'){dot.className='sync-dot';txt.textContent='Sincronizado';}
+  else{dot.className='sync-dot error';txt.textContent='Sin conexión';}
+}
+setInterval(loadTasks,30000);
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+// ── Date helpers ──────────────────────────────────────────────
+function getWeekStart(offset){
+  const now=new Date(),day=now.getDay(),mon=new Date(now);
+  mon.setDate(now.getDate()-(day===0?6:day-1)+(offset*7));
+  mon.setHours(0,0,0,0);return mon;
+}
+function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
+function fmtDate(d){return d.toLocaleDateString('es-MX',{day:'numeric',month:'short'});}
+function fmtDateShort(str){
+  if(!str)return'';
+  const d=new Date(str+'T12:00:00');
+  return d.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+}
+function weekLabel(o){const s=getWeekStart(o),e=addDays(s,5);return`${fmtDate(s)} – ${fmtDate(e)}`;}
+function dateKey(d){return d.toISOString().slice(0,10);}
+function todayKey(){return dateKey(new Date());}
+
+// ── Auto-move missed tasks ─────────────────────────────────────
+async function autoMoveTasks(){
+  const today=todayKey();
+  const toMove=state.tasks.filter(t=>!t.done&&t.date<today);
+  for(const t of toMove){
+    const missed=t.missed_dates||[];
+    if(!missed.includes(t.date))missed.push(t.date);
+    await updateTask(t.id,{date:today,missed_dates:missed});
+  }
+}
+
+// ── Stats ─────────────────────────────────────────────────────
+function calcStats(tasks){
+  const total=tasks.length,done=tasks.filter(t=>t.done).length,pct=total?Math.round((done/total)*100):0;
+  return{total,done,pct};
+}
+function getMissedCount(pid){
+  return state.tasks.filter(t=>t.person===pid&&t.missed_dates&&t.missed_dates.length>0).length;
+}
+function getMissedByDay(pid){
+  const map={};
+  state.tasks.filter(t=>t.person===pid&&t.missed_dates&&t.missed_dates.length>0)
+    .forEach(t=>(t.missed_dates||[]).forEach(d=>{map[d]=(map[d]||0)+1;}));
+  return map;
+}
+function getTasksForDate(pid,dk){
+  return state.tasks.filter(t=>t.person===pid&&t.date===dk).sort((a,b)=>a.priority-b.priority);
+}
+function getTasksForWeek(pid,offset){
+  const s=getWeekStart(offset);
+  const keys=Array.from({length:6},(_,i)=>dateKey(addDays(s,i)));
+  return state.tasks.filter(t=>t.person===pid&&keys.includes(t.date));
+}
+
+// ── Modal ─────────────────────────────────────────────────────
+let modalTask=null;
+function openModal(opts={}){
+  modalTask=opts.editId?state.tasks.find(t=>t.id===opts.editId):null;
+  const t=modalTask;
+  const defPerson=t?t.person:(opts.prefPerson||PERSONS[0].id);
+  const defDate=t?t.date:(opts.prefDate||todayKey());
+  const defSlot=t?t.slot:(opts.prefSlot||'8:00');
+  const defPrio=t?t.priority:1;
+  const defTs=t&&t.time_start?t.time_start:'';
+  const defTe=t&&t.time_end?t.time_end:'';
+  const defPct=t?t.pct:0;
+  const defDesc=t?t.description:'';
+  const defSPs=t&&t.subprojects?t.subprojects:[];
+  const evs=t&&t.evidence_paths?t.evidence_paths:[];
+
+  document.getElementById('modal-content').innerHTML=`
+    <div class="modal-title">${t?'Editar tarea':'Nueva tarea'}</div>
+    <div class="fg"><div class="fl">Descripción</div><input class="fi" id="m-desc" value="${defDesc.replace(/"/g,'&quot;')}" placeholder="¿Qué hay que hacer?"></div>
+    <div class="fi-row">
+      <div class="fg"><div class="fl">Persona</div><select class="fi" id="m-person">${PERSONS.map(p=>`<option value="${p.id}"${defPerson===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>
+      <div class="fg"><div class="fl">Fecha</div><input class="fi" type="date" id="m-date" value="${defDate}"></div>
+    </div>
+    <div class="fi-row">
+      <div class="fg"><div class="fl">Franja horaria</div><select class="fi" id="m-slot">${TIME_SLOTS.map(s=>`<option value="${s}"${defSlot===s?' selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="fg"><div class="fl">Prioridad</div><select class="fi" id="m-priority">${PRIO.map(p=>`<option value="${p.n}"${defPrio===p.n?' selected':''}>P${p.n} · ${['Alta','Media-alta','Media','Baja','Mínima'][p.n-1]}</option>`).join('')}</select></div>
+    </div>
+    <div class="fi-row">
+      <div class="fg"><div class="fl">Hora inicio</div><input class="fi" type="time" id="m-tstart" value="${defTs}"></div>
+      <div class="fg"><div class="fl">Hora fin</div><input class="fi" type="time" id="m-tend" value="${defTe}"></div>
+    </div>
+    <div class="fg"><div class="fl">Subproyectos</div>
+      <div class="sp-checks">${SUBPROJECTS.map(sp=>`
+        <label class="sp-check-item">
+          <input type="checkbox" class="sp-cb" value="${sp.id}"${defSPs.includes(sp.id)?' checked':''}>
+          <span class="sp-badge" style="background:${sp.bg};color:${sp.tc};border-color:${sp.color}">${sp.code}</span>
+          <span>${sp.desc}</span>
+        </label>`).join('')}
+      </div>
+    </div>
+    <div class="fg"><div class="fl">% avance</div>
+      <div class="pct-row">
+        <input type="range" min="0" max="100" step="5" value="${defPct}" id="m-pct" oninput="document.getElementById('m-pct-v').textContent=this.value+'%'">
+        <span class="pct-val" id="m-pct-v">${defPct}%</span>
+      </div>
+    </div>
+    ${t?`<div class="fg"><div class="fl">Evidencias</div>
+      <div class="evidence-list" id="ev-list">
+        ${evs.map(path=>{
+          const fname=path.split('/').pop();
+          return`<div class="evidence-item">
+            <a href="${evidenceUrl(path)}" target="_blank">${fname}</a>
+            <button class="ev-del" onclick="deleteEvidence('${t.id}','${path}')" title="Eliminar">×</button>
+          </div>`;
+        }).join('')}
+      </div>
+      <input type="file" id="m-evidence" multiple style="margin-top:6px;font-size:12px" accept="image/*,.pdf,.xlsx,.csv,.txt">
+    </div>`:''}
+    <div class="mac">
+      ${t?`<button class="btn btn-d" onclick="deleteTask('${t.id}')">Eliminar</button>`:''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-p" onclick="saveModalTask('${t?t.id:''}')">Guardar</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('open');
+  modalTask=null;
+}
+
+async function saveModalTask(editId){
+  const desc=document.getElementById('m-desc').value.trim();
+  if(!desc)return;
+  const person=document.getElementById('m-person').value;
+  const date=document.getElementById('m-date').value;
+  const slot=document.getElementById('m-slot').value;
+  const priority=parseInt(document.getElementById('m-priority').value);
+  const time_start=document.getElementById('m-tstart').value;
+  const time_end=document.getElementById('m-tend').value;
+  const pct=parseInt(document.getElementById('m-pct').value);
+  const subprojects=Array.from(document.querySelectorAll('.sp-cb:checked')).map(x=>x.value);
+  const done=pct===100;
+  const payload={description:desc,person,date,slot,priority,time_start,time_end,pct,done,subprojects};
+
+  closeModal();
+  if(editId){
+    await updateTask(editId,payload);
+    const evInput=document.getElementById('m-evidence');
+    if(evInput&&evInput.files.length>0){
+      for(const f of evInput.files) await uploadEvidence(editId,f);
+    }
+  } else {
+    payload.missed_dates=[];
+    payload.evidence_paths=[];
+    await createTask(payload);
+  }
+}
+
+// ── Render helpers ─────────────────────────────────────────────
+function spBadges(sps){
+  if(!sps||!sps.length)return'';
+  return sps.map(sid=>{
+    const sp=SUBPROJECTS.find(x=>x.id===sid);
+    if(!sp)return'';
+    return`<span class="sp-badge" style="background:${sp.bg};color:${sp.tc};border-color:${sp.color}">${sp.code}</span>`;
+  }).join(' ');
+}
+
+function renderTaskBlock(t){
+  const p=PERSONS.find(x=>x.id===t.person),pr=PRIO[t.priority-1];
+  const timeStr=t.time_start&&t.time_end?`${t.time_start}–${t.time_end}`:'';
+  const missed=t.missed_dates&&t.missed_dates.length>0?`<span class="task-moved-mark">movida ${t.missed_dates.length}x</span>`:'';
+  const evCount=t.evidence_paths&&t.evidence_paths.length>0?`<span style="font-size:8px;background:#E6F1FB;color:#0C447C;padding:1px 4px;border-radius:3px">${t.evidence_paths.length} arch.</span>`:'';
+  return`<div class="task-block${t.done?' task-done':''}" style="background:${pr.bg};border-left-color:${pr.color}" onclick="openModal({editId:'${t.id}'})">
+    <div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap">
+      <span style="font-size:9px;font-weight:600;background:${pr.color};color:#fff;padding:1px 4px;border-radius:3px">${pr.label}</span>
+      <span style="font-size:9px;font-weight:600;background:${p.bg};color:${p.tc};padding:1px 4px;border-radius:3px;border:1px solid ${p.color}">${p.initial}</span>
+      ${spBadges(t.subprojects)}${evCount}
+    </div>
+    <div class="task-block-name" style="color:${pr.tc};margin-top:2px">${t.description}</div>
+    ${timeStr?`<div style="font-size:9px;color:${pr.tc};opacity:.75">${timeStr}</div>`:''}
+    ${missed}
+    <div class="bar-wrap"><div class="bar-fill" style="width:${t.pct}%;background:${pr.color}"></div></div>
+  </div>`;
+}
+
+function renderCalendar(filterPid){
+  const ws=getWeekStart(state.weekOffset);
+  const dates=Array.from({length:6},(_,i)=>addDays(ws,i));
+  const dkeys=dates.map(dateKey);
+  let html=`<div class="legend" style="margin-bottom:10px">
+    ${PRIO.map(p=>`<span class="legend-item"><span class="legend-dot" style="background:${p.color}"></span>${p.label}</span>`).join('')}
+    <span style="margin-left:8px;display:flex;gap:4px">${PERSONS.map(p=>`<span style="background:${p.bg};color:${p.tc};padding:1px 6px;border-radius:4px;border:1px solid ${p.color};font-size:10px;font-weight:600">${p.initial}</span>`).join('')}</span>
+    <span style="display:flex;gap:4px">${SUBPROJECTS.map(sp=>`<span class="sp-badge" style="background:${sp.bg};color:${sp.tc};border-color:${sp.color}">${sp.code}</span>`).join('')}</span>
+  </div>
+  <div class="cal-wrap"><table class="cal-table">
+    <thead><tr><th style="width:64px"></th>${dates.map((d,i)=>{
+      const dk=dkeys[i];
+      const allT=filterPid?getTasksForDate(filterPid,dk):PERSONS.flatMap(p=>getTasksForDate(p.id,dk));
+      const missed=allT.filter(t=>t.missed_dates&&t.missed_dates.length>0).length;
+      const isToday=dk===todayKey();
+      return`<th style="${isToday?'background:#E6F1FB;':''}">
+        ${DAYS[i]}<br><span style="font-weight:400;font-size:10px">${fmtDate(d)}</span>
+        ${missed>0?`<br><span style="font-size:9px;background:#FCEBEB;color:#791F1F;padding:1px 4px;border-radius:5px;font-weight:600">${missed} incumpl.</span>`:''}
+      </th>`;
+    }).join('')}</tr></thead><tbody>`;
+  TIME_SLOTS.forEach(slot=>{
+    html+=`<tr><td class="time-cell">${slot}</td>`;
+    dkeys.forEach((dk,di)=>{
+      const isToday=dk===todayKey();
+      const pids=filterPid?[filterPid]:PERSONS.map(x=>x.id);
+      let tasks=pids.flatMap(pid=>getTasksForDate(pid,dk).filter(t=>t.slot===slot));
+      tasks.sort((a,b)=>a.priority-b.priority);
+      html+=`<td style="${isToday?'background:#fafeff;':''}">
+        ${tasks.map(t=>renderTaskBlock(t)).join('')}
+        <button class="add-cell-btn" onclick="openModal({prefDate:'${dk}',prefSlot:'${slot}'${filterPid?`,prefPerson:'${filterPid}'`:''}})" title="Agregar tarea">+</button>
+      </td>`;
+    });
+    html+=`</tr>`;
+  });
+  html+=`</tbody></table></div>`;
+  return html;
+}
+
+function renderHomeStats(){
+  const today=todayKey(),ws=getWeekStart(0);
+  const wKeys=Array.from({length:6},(_,i)=>dateKey(addDays(ws,i)));
+  const ds=calcStats(state.tasks.filter(t=>t.date===today));
+  const wst=calcStats(state.tasks.filter(t=>wKeys.includes(t.date)));
+  return`<div class="stat-row">
+    <div class="stat-section">
+      <div class="stat-section-title">Hoy · ${fmtDate(new Date())}</div>
+      <div class="stat-nums">
+        <div class="stat-card"><div class="stat-num">${ds.done}</div><div class="stat-lbl">Completadas</div></div>
+        <div class="stat-card"><div class="stat-num">${ds.total}</div><div class="stat-lbl">Totales</div></div>
+        <div class="stat-card"><div class="stat-num">${ds.pct}%</div><div class="stat-lbl">Avance</div></div>
+      </div>
+    </div>
+    <div class="stat-section">
+      <div class="stat-section-title">Esta semana · ${weekLabel(0)}</div>
+      <div class="stat-nums">
+        <div class="stat-card"><div class="stat-num">${wst.done}</div><div class="stat-lbl">Completadas</div></div>
+        <div class="stat-card"><div class="stat-num">${wst.total}</div><div class="stat-lbl">Totales</div></div>
+        <div class="stat-card"><div class="stat-num">${wst.pct}%</div><div class="stat-lbl">Avance</div></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderPersonRow(){
+  return`<div class="person-row">${PERSONS.map(p=>{
+    const s=calcStats(getTasksForWeek(p.id,0));
+    const missed=getMissedCount(p.id);
+    const active=state.view==='person'&&state.selectedPerson===p.id;
+    return`<div class="person-chip${active?' active':''}" style="${active?`border-color:${p.color};`:''}" onclick="openPersonView('${p.id}')">
+      <div class="person-avatar" style="background:${p.bg};color:${p.tc}">${p.initials}</div>
+      <div class="person-chip-name">${p.name}</div>
+      <div class="person-stats"><span class="ps-num">${s.done}/${s.total}</span><span class="ps-num" style="color:${p.color};font-weight:600">${s.pct}%</span></div>
+      <div class="bar-wrap"><div class="bar-fill" style="width:${s.pct}%;background:${p.color}"></div></div>
+      ${missed>0?`<div style="text-align:center"><span class="missed-badge">${missed} incumplida${missed>1?'s':''}</span></div>`:''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function renderWeekTabs(view){
+  return`<div class="week-tabs">${[0,1,2,3].map(i=>`
+    <div class="week-tab${state.weekOffset===i?' active':''}" onclick="setWeek(${i},'${view}')">${weekLabel(i)}</div>`).join('')}</div>`;
+}
+
+function renderReports(){
+  const byPerson=state.reportFilter==='person';
+  let html=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+    <span style="font-size:11px;color:#888;font-weight:500">Ver por:</span>
+    <button class="filter-chip${byPerson?' active':''}" onclick="setReportFilter('person')">Persona</button>
+    <button class="filter-chip${!byPerson?' active':''}" onclick="setReportFilter('subproject')">Subproyecto</button>
+  </div>`;
+  if(byPerson){
+    html+=PERSONS.map(p=>{
+      const ptasks=state.tasks.filter(t=>t.person===p.id);
+      const s=calcStats(ptasks);
+      const missed=getMissedCount(p.id);
+      const missedMap=getMissedByDay(p.id);
+      const missedDays=Object.keys(missedMap).sort();
+      return`<div class="report-card" style="margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="width:30px;height:30px;border-radius:50%;background:${p.bg};color:${p.tc};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">${p.initials}</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600">${p.name}</div>
+            <div style="font-size:11px;color:#888">${s.done}/${s.total} tareas · ${s.pct}% completado</div>
+          </div>
+          ${missed>0?`<span class="missed-badge">${missed} incumplida${missed>1?'s':''}</span>`:''}
+        </div>
+        <div class="bar-wrap" style="height:5px;margin-bottom:12px"><div class="bar-fill" style="width:${s.pct}%;background:${p.color}"></div></div>
+        ${ptasks.length===0?'<div style="font-size:12px;color:#aaa;text-align:center;padding:10px">Sin tareas registradas</div>':
+          ptasks.sort((a,b)=>a.date.localeCompare(b.date)).map(t=>{
+            const pr=PRIO[t.priority-1];
+            const evCount=t.evidence_paths&&t.evidence_paths.length>0?`<span style="font-size:10px;color:#185FA5">${t.evidence_paths.length} archivo${t.evidence_paths.length>1?'s':''}</span>`:'';
+            return`<div class="report-task-row">
+              <span style="font-size:9px;background:${pr.color};color:#fff;padding:2px 5px;border-radius:3px;font-weight:600;flex-shrink:0;margin-top:2px">${pr.label}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:#1a1a1a${t.done?';text-decoration:line-through;opacity:.5':''}">${t.description}</div>
+                <div style="font-size:10px;color:#888;margin-top:2px;display:flex;gap:6px;flex-wrap:wrap">
+                  <span>${fmtDateShort(t.date)}</span>
+                  ${t.time_start?`<span>${t.time_start}–${t.time_end}</span>`:''}
+                  <span>${spBadges(t.subprojects)||'—'}</span>
+                  ${evCount}
+                </div>
+                ${t.missed_dates&&t.missed_dates.length>0?`<div style="font-size:9px;color:#791F1F;font-style:italic;margin-top:2px">Movida ${t.missed_dates.length}x · ${t.missed_dates.map(fmtDateShort).join(', ')}</div>`:''}
+              </div>
+              <span style="font-size:12px;font-weight:600;color:${t.done?'#27500A':'#888'};flex-shrink:0">${t.pct}%</span>
+            </div>`;
+          }).join('')}
+        ${missedDays.length>0?`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #f5f5f3">
+          <div style="font-size:10px;color:#888;margin-bottom:4px;font-weight:600">Incumplimientos por día</div>
+          ${missedDays.map(d=>`<span class="missed-day-chip">${fmtDateShort(d)}: ${missedMap[d]}</span>`).join('')}
+        </div>`:''}
+      </div>`;
+    }).join('');
+  } else {
+    html+=SUBPROJECTS.map(sp=>{
+      const spTasks=state.tasks.filter(t=>t.subprojects&&t.subprojects.includes(sp.id));
+      const s=calcStats(spTasks);
+      return`<div class="report-card" style="margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span class="sp-badge" style="font-size:13px;padding:4px 10px;background:${sp.bg};color:${sp.tc};border-color:${sp.color}">${sp.code}</span>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600">${sp.desc}</div>
+            <div style="font-size:11px;color:#888">${s.done}/${s.total} tareas · ${s.pct}%</div>
+          </div>
+        </div>
+        <div class="bar-wrap" style="height:5px;margin-bottom:12px"><div class="bar-fill" style="width:${s.pct}%;background:${sp.color}"></div></div>
+        ${spTasks.length===0?'<div style="font-size:12px;color:#aaa;text-align:center;padding:10px">Sin tareas en este subproyecto</div>':
+          spTasks.sort((a,b)=>a.date.localeCompare(b.date)).map(t=>{
+            const pr=PRIO[t.priority-1];
+            const per=PERSONS.find(x=>x.id===t.person);
+            return`<div class="report-task-row">
+              <span style="font-size:9px;background:${pr.color};color:#fff;padding:2px 5px;border-radius:3px;font-weight:600;flex-shrink:0;margin-top:2px">${pr.label}</span>
+              <span style="font-size:9px;background:${per.bg};color:${per.tc};padding:2px 5px;border-radius:3px;border:1px solid ${per.color};font-weight:600;flex-shrink:0;margin-top:2px">${per.initial}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600${t.done?';text-decoration:line-through;opacity:.5':''}">${t.description}</div>
+                <div style="font-size:10px;color:#888;margin-top:2px">${fmtDateShort(t.date)}${t.time_start?` · ${t.time_start}–${t.time_end}`:''}</div>
+                ${t.missed_dates&&t.missed_dates.length>0?`<div style="font-size:9px;color:#791F1F;font-style:italic">Movida ${t.missed_dates.length}x</div>`:''}
+              </div>
+              <span style="font-size:12px;font-weight:600;color:${t.done?'#27500A':'#888'};flex-shrink:0">${t.pct}%</span>
+            </div>`;
+          }).join('')}
+      </div>`;
+    }).join('');
+  }
+  return html;
+}
+
+// ── Main render ───────────────────────────────────────────────
+function render(){
+  const app=document.getElementById('app');
+  if(state.view==='home'){
+    app.innerHTML=`
+      ${renderHomeStats()}
+      <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Equipo · semana actual</div>
+      ${renderPersonRow()}
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:15px;font-weight:600">LT01 · ${state.mainTab==='calendario'?weekLabel(state.weekOffset):'Reporte general'}</div>
+        </div>
+        ${state.mainTab==='calendario'?`<button class="btn btn-p" onclick="openModal()" style="font-size:12px">+ Nueva tarea</button>`:''}
+      </div>
+      <div class="main-tabs">
+        <button class="main-tab${state.mainTab==='calendario'?' active':''}" onclick="setMainTab('calendario')">Calendario</button>
+        <button class="main-tab${state.mainTab==='reportes'?' active':''}" onclick="setMainTab('reportes')">Reportes</button>
+      </div>
+      <div>
+        ${state.mainTab==='calendario'?renderWeekTabs('home')+renderCalendar(null):renderReports()}
+      </div>`;
+  } else {
+    const p=PERSONS.find(x=>x.id===state.selectedPerson);
+    const s=calcStats(getTasksForWeek(p.id,state.weekOffset));
+    const missed=getMissedCount(p.id);
+    const missedMap=getMissedByDay(p.id);
+    const missedDays=Object.keys(missedMap).sort();
+    app.innerHTML=`
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="width:38px;height:38px;border-radius:50%;background:${p.bg};color:${p.tc};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600">${p.initials}</div>
+        <div>
+          <div style="font-size:16px;font-weight:600">${p.name}</div>
+          <div style="font-size:12px;color:#888">${s.done}/${s.total} tareas · ${s.pct}% completado esta semana</div>
+          ${missed>0?`<span class="missed-badge">${missed} tarea${missed>1?'s':''} incumplida${missed>1?'s':''}</span>`:''}
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn" onclick="goHome()">← Volver</button>
+          <button class="btn btn-p" onclick="openModal({prefPerson:'${p.id}'})">+ Nueva tarea</button>
+        </div>
+      </div>
+      ${missedDays.length>0?`<div style="background:#FCEBEB;border-radius:8px;padding:10px 14px">
+        <div style="font-size:11px;color:#791F1F;font-weight:600;margin-bottom:5px">Tareas incumplidas por día</div>
+        ${missedDays.map(d=>`<span class="missed-day-chip">${fmtDateShort(d)}: ${missedMap[d]} tarea${missedMap[d]>1?'s':''}</span>`).join('')}
+      </div>`:''}
+      ${renderPersonRow()}
+      ${renderWeekTabs('person')}
+      ${renderCalendar(p.id)}`;
+  }
+}
+
+function setMainTab(t){state.mainTab=t;render();}
+function setReportFilter(f){state.reportFilter=f;render();}
+function openPersonView(id){state.view='person';state.selectedPerson=id;state.weekOffset=0;render();}
+function goHome(){state.view='home';render();}
+function setWeek(o,v){state.weekOffset=o;state.view=v==='person'?'person':'home';render();}
+
+// ── Init ──────────────────────────────────────────────────────
+document.getElementById('topbar-date').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'});
+
+loadTasks().then(()=>autoMoveTasks());
+</script>
+</body>
+</html>

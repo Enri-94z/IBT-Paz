@@ -412,172 +412,203 @@ function renderCalendar(filterPid){
   var dkeys=dates.map(dateKey);
   var today=todayKey();
 
-  // Hour slots 8-19 plus pre/post
-  var HOURS=[];
-  for(var h=8;h<=19;h++) HOURS.push(h);
-  var ALL_SLOTS=['pre'].concat(HOURS.map(function(h){return h+':00';})).concat(['post']);
-  var SLOT_LABEL={'pre':'Antes 8am','post':'Despues 7pm'};
-  HOURS.forEach(function(h){SLOT_LABEL[h+':00']=h+':00';});
+  var START_H=8, END_H=19;
+  var TOTAL_HOURS=END_H-START_H; // 11 hours
+  var ROW_PX=52; // px per hour
+  var PRE_H=32, POST_H=32; // px for pre/post rows
+  var TOTAL_PX=TOTAL_HOURS*ROW_PX;
+  var COL_W=170; // min px per day column
 
-  // Build per-day per-slot task list
-  // taskMap[dk][slotKey] = [tasks that START in this slot]
-  var taskMap={};
-  dkeys.forEach(function(dk){
-    taskMap[dk]={};
-    ALL_SLOTS.forEach(function(sk){taskMap[dk][sk]=[];});
-  });
+  function tMin(str){ if(!str) return null; var p=str.split(':'); return parseInt(p[0])*60+(parseInt(p[1])||0); }
+  function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
 
-  // For each task, determine which slot it starts in and how many slots it spans
-  function getSlotInfo(t){
-    if(!t.time_start||!t.time_end){
-      return {startSlot:t.slot||'pre', span:1};
-    }
-    var sm=timeToMinutes(t.time_start);
-    var em=timeToMinutes(t.time_end);
-    var sh=Math.floor(sm/60);
-    var eh=Math.floor(em/60);
-    if(em%60>0) eh=eh; // partial hour still counts as that hour
-    var startSlot=sh<8?'pre':(sh>=19?'post':sh+':00');
-    // Count how many hour slots the task covers
-    var span=1;
-    if(startSlot!=='pre'&&startSlot!=='post'&&em>sm){
-      var startH=sh<8?8:(sh>=19?19:sh);
-      var endH=eh>19?19:eh;
-      span=Math.max(1,endH-startH);
-      if(em%60>0&&endH<19) span+=0; // partial last hour already counted
-    }
-    return {startSlot:startSlot, span:span};
+  // Layout tasks for one day using a column-based overlap algorithm (like Google Calendar)
+  function layoutDay(tasks){
+    // Sort by start time
+    var items=tasks.map(function(t){
+      var sm=tMin(t.time_start), em=tMin(t.time_end);
+      var special=(!t.time_start||!t.time_end||sm===null||em===null);
+      return {t:t, sm:special?null:sm, em:special?null:em, col:0, maxCol:1, special:special};
+    });
+
+    // Separate special (no time) from timed
+    var timed=items.filter(function(x){return !x.special;}).sort(function(a,b){return a.sm-b.sm;});
+    var special=items.filter(function(x){return x.special;});
+
+    // Assign columns via sweep
+    var cols=[]; // cols[c] = end time of last task in column c
+    timed.forEach(function(item){
+      var placed=false;
+      for(var c=0;c<cols.length;c++){
+        if(cols[c]<=item.sm){ item.col=c; cols[c]=item.em; placed=true; break; }
+      }
+      if(!placed){ item.col=cols.length; cols.push(item.em); }
+    });
+
+    // Assign maxCol (total columns in overlapping group)
+    timed.forEach(function(item){
+      var mc=1;
+      timed.forEach(function(other){
+        if(other!==item && other.sm<item.em && other.em>item.sm){
+          mc=Math.max(mc,other.col+1);
+        }
+      });
+      item.maxCol=Math.max(item.col+1,mc);
+    });
+
+    return {timed:timed, special:special, numCols:cols.length||1};
   }
 
-  state.tasks.filter(function(t){
-    return dkeys.indexOf(t.date)>=0&&(filterPid?t.person===filterPid:true);
-  }).forEach(function(t){
-    var info=getSlotInfo(t);
-    t._slotInfo=info;
-    if(taskMap[t.date]&&taskMap[t.date][info.startSlot]!==undefined){
-      taskMap[t.date][info.startSlot].push(t);
+  // Build HTML for one day column
+  function dayHtml(dk){
+    var dayTasks=state.tasks.filter(function(t){
+      return t.date===dk&&(filterPid?t.person===filterPid:true);
+    });
+    var layout=layoutDay(dayTasks);
+    var numCols=Math.max(layout.numCols,1);
+    var isToday=dk===today;
+    var bg=isToday?'#fafeff':'#fff';
+
+    var html='<div style="position:relative;height:'+(PRE_H+TOTAL_PX+POST_H)+'px;background:'+bg+';min-width:'+COL_W+'px;">';
+
+    // Hour grid lines
+    for(var h=0;h<=TOTAL_HOURS;h++){
+      var y=PRE_H+h*ROW_PX;
+      html+='<div style="position:absolute;left:0;right:0;top:'+y+'px;border-top:1px solid '+(h===0?'#e5e5e3':'#f0f0f0')+';pointer-events:none"></div>';
     }
-  });
 
-  // For rowspan: track which day+slot cells are "consumed" by a spanning task
-  // consumed[dk][slotKey] = true means skip this cell (covered by rowspan above)
-  var consumed={};
-  dkeys.forEach(function(dk){consumed[dk]={};});
+    // Special tasks (no time) at top
+    layout.special.forEach(function(item){
+      var t=item.t;
+      var p=PERSONS.find(function(x){return x.id===t.person;});
+      var pr=PRIO[t.priority-1];
+      html+='<div onclick="openModal({editId:\''+t.id+'\'})" style="position:absolute;top:2px;left:2px;right:2px;height:26px;background:'+pr.bg+';border-left:3px solid '+pr.color+';border-radius:4px;padding:2px 4px;cursor:pointer;font-size:9px;overflow:hidden;'+(t.done?'opacity:.5;':'')+'">';
+      html+='<span style="background:'+pr.color+';color:#fff;padding:0 2px;border-radius:2px;font-size:8px;font-weight:700">'+pr.label+'</span> ';
+      html+='<span style="background:'+p.bg+';color:'+p.tc+';padding:0 2px;border-radius:2px;font-size:8px;font-weight:700;border:1px solid '+p.color+'">'+p.initial+'</span> ';
+      html+='<span style="font-weight:600;color:'+pr.tc+'">'+t.description+'</span>';
+      html+='</div>';
+    });
 
-  function taskBlock(t){
-    var p=PERSONS.find(function(x){return x.id===t.person;});
-    var pr=PRIO[t.priority-1];
-    var timeStr=t.time_start&&t.time_end?t.time_start+'-'+t.time_end:'';
-    var evCount=t.evidence_paths&&t.evidence_paths.length>0?' +'+t.evidence_paths.length+'arch':'';
-    var movedMark=t.missed_dates&&t.missed_dates.length>0?' mov'+t.missed_dates.length+'x':'';
-    var eid=t.id;
-    return '<div onclick="openModal({editId:\'' +eid+ '\'})" title="'+t.description+(timeStr?' ('+timeStr+')':'')+'" style="'+
-      'background:'+pr.bg+';border-left:3px solid '+pr.color+';border-radius:4px;'+
-      'padding:3px 5px;cursor:pointer;font-size:10px;line-height:1.35;margin-bottom:2px;'+
-      (t.done?'opacity:.5;':'')+
-      '">'+
-      '<div style="display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-bottom:1px">'+
-        '<span style="background:'+pr.color+';color:#fff;padding:0 3px;border-radius:2px;font-size:8px;font-weight:700">'+pr.label+'</span>'+
-        '<span style="background:'+p.bg+';color:'+p.tc+';padding:0 3px;border-radius:2px;font-size:8px;font-weight:700;border:1px solid '+p.color+'">'+p.initial+'</span>'+
-        spBadges(t.subprojects)+
-      '</div>'+
-      '<div style="font-weight:600;color:'+pr.tc+';'+(t.done?'text-decoration:line-through;':'')+'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t.description+'</div>'+
-      (timeStr?'<div style="font-size:9px;color:'+pr.tc+';opacity:.75">'+timeStr+evCount+movedMark+'</div>':'')+
-      '<div style="height:2px;background:rgba(0,0,0,.1);border-radius:1px;margin-top:2px">'+
-        '<div style="height:100%;width:'+t.pct+'%;background:'+pr.color+';border-radius:1px"></div>'+
-      '</div>'+
-    '</div>';
+    // Timed tasks as positioned bars
+    layout.timed.forEach(function(item){
+      var t=item.t;
+      var p=PERSONS.find(function(x){return x.id===t.person;});
+      var pr=PRIO[t.priority-1];
+      var smC=clamp(item.sm, START_H*60, END_H*60);
+      var emC=clamp(item.em, START_H*60, END_H*60);
+      var topPx=PRE_H+(smC-START_H*60)/60*ROW_PX;
+      var heightPx=Math.max((emC-smC)/60*ROW_PX-2, 20);
+      var colW=100/item.maxCol;
+      var leftPct=item.col*colW;
+      var timeStr=t.time_start+'-'+t.time_end;
+      var evMark=t.evidence_paths&&t.evidence_paths.length>0?' +'+t.evidence_paths.length+'f':'';
+      var movMark=t.missed_dates&&t.missed_dates.length>0?' m'+t.missed_dates.length+'x':'';
+      html+='<div onclick="openModal({editId:\''+t.id+'\'})" title="'+t.description+' ('+timeStr+')" style="'+
+        'position:absolute;'+
+        'top:'+topPx+'px;'+
+        'height:'+heightPx+'px;'+
+        'left:'+leftPct+'%;'+
+        'width:'+(colW-0.5)+'%;'+
+        'background:'+pr.bg+';'+
+        'border-left:3px solid '+pr.color+';'+
+        'border-radius:4px;'+
+        'padding:2px 4px;'+
+        'cursor:pointer;'+
+        'overflow:hidden;'+
+        'box-sizing:border-box;'+
+        'font-size:9px;line-height:1.3;'+
+        (t.done?'opacity:.5;':'')+
+      '">';
+      html+='<div style="display:flex;align-items:center;gap:2px;flex-wrap:wrap">';
+      html+='<span style="background:'+pr.color+';color:#fff;padding:0 2px;border-radius:2px;font-size:8px;font-weight:700">'+pr.label+'</span>';
+      html+='<span style="background:'+p.bg+';color:'+p.tc+';padding:0 2px;border-radius:2px;font-size:8px;font-weight:700;border:1px solid '+p.color+'">'+p.initial+'</span>';
+      html+=spBadges(t.subprojects);
+      html+='</div>';
+      if(heightPx>30){
+        html+='<div style="font-weight:600;color:'+pr.tc+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t.description+'</div>';
+      }
+      if(heightPx>44){
+        html+='<div style="font-size:8px;color:'+pr.tc+';opacity:.8">'+timeStr+evMark+movMark+'</div>';
+        html+='<div style="height:2px;background:rgba(0,0,0,.1);border-radius:1px;margin-top:2px"><div style="height:100%;width:'+t.pct+'%;background:'+pr.color+'"></div></div>';
+      }
+      html+='</div>';
+    });
+
+    // Add-task invisible overlay per hour
+    for(var h2=0;h2<TOTAL_HOURS;h2++){
+      var hk=(START_H+h2)+':00';
+      var ty=PRE_H+h2*ROW_PX;
+      html+='<div onclick="openModal({prefDate:\''+dk+'\',prefSlot:\''+hk+'\''+(filterPid?',prefPerson:\''+filterPid+'\'':'')+'})" '+
+        'style="position:absolute;left:0;right:0;top:'+ty+'px;height:'+ROW_PX+'px;cursor:cell;z-index:0;" '+
+        'title="Agregar tarea '+(START_H+h2)+':00"></div>';
+    }
+
+    html+='</div>';
+    return html;
   }
 
+  // Time axis column
+  function timeAxisHtml(){
+    var html='<div style="position:relative;height:'+(PRE_H+TOTAL_PX+POST_H)+'px;width:62px;flex-shrink:0;">';
+    html+='<div style="position:absolute;top:0;height:'+PRE_H+'px;right:8px;font-size:9px;color:#bbb;display:flex;align-items:center;">Antes 8am</div>';
+    for(var h=0;h<=TOTAL_HOURS;h++){
+      var y=PRE_H+h*ROW_PX;
+      var label=(START_H+h)+':00';
+      if(START_H+h>19) continue;
+      html+='<div style="position:absolute;top:'+(y-7)+'px;right:8px;font-size:9px;color:#888;font-weight:600;white-space:nowrap;">'+label+'</div>';
+    }
+    html+='<div style="position:absolute;bottom:0;height:'+POST_H+'px;right:8px;font-size:9px;color:#bbb;display:flex;align-items:center;">Desp. 7pm</div>';
+    html+='</div>';
+    return html;
+  }
+
+  // Legend
   var legendHtml='<div class="legend" style="margin-bottom:10px">'+
     PRIO.map(function(p){return '<span class="legend-item"><span class="legend-dot" style="background:'+p.color+'"></span>'+p.label+'</span>';}).join('')+
     '<span style="margin-left:8px;display:flex;gap:4px">'+PERSONS.map(function(p){return '<span style="background:'+p.bg+';color:'+p.tc+';padding:1px 6px;border-radius:4px;border:1px solid '+p.color+';font-size:10px;font-weight:600">'+p.initial+'</span>';}).join('')+'</span>'+
     '<span style="display:flex;gap:4px">'+SUBPROJECTS.map(function(sp){return '<span class="sp-badge" style="background:'+sp.bg+';color:'+sp.tc+';border-color:'+sp.color+'">'+sp.code+'</span>';}).join('')+'</span>'+
   '</div>';
 
-  // Thead: each day gets its own column (no sub-columns per person — tasks stack horizontally within cell)
-  var minColW=160; // wider to allow horizontal task stacking
-  var thead='<thead><tr><th style="width:62px;min-width:62px"></th>'+dates.map(function(d,i){
+  // Day headers
+  var headersHtml='<div style="display:flex;margin-left:62px;min-width:'+(dkeys.length*COL_W)+'px;">';
+  dates.forEach(function(d,i){
     var dk=dkeys[i];
     var allT=state.tasks.filter(function(t){return t.date===dk&&(filterPid?t.person===filterPid:true);});
     var missed=allT.filter(function(t){return t.missed_dates&&t.missed_dates.length>0;}).length;
     var isToday=dk===today;
-    return '<th style="min-width:'+minColW+'px;'+(isToday?'background:#E6F1FB;':'')+'">'
-      +DAYS[i]+'<br><span style="font-weight:400;font-size:10px">'+fmtDate(d)+'</span>'
-      +(missed>0?'<br><span style="font-size:9px;background:#FCEBEB;color:#791F1F;padding:1px 4px;border-radius:5px;font-weight:600">'+missed+' incumpl.</span>':'')+
-    '</th>';
-  }).join('')+'</tr></thead>';
-
-  var ROW_H=52;
-  var addBtns=[];
-  var tbody='<tbody>';
-  ALL_SLOTS.forEach(function(sk){
-    var isExtra=sk==='pre'||sk==='post';
-    var rowH=isExtra?(ROW_H*0.7)+'px':ROW_H+'px';
-    tbody+='<tr style="height:'+rowH+'">';
-    tbody+='<td class="time-cell" style="height:'+rowH+';'+(isExtra?'color:#bbb;font-size:9px;font-weight:400;':'')+'">'+SLOT_LABEL[sk]+'</td>';
-
-    dkeys.forEach(function(dk){
-      var isToday=dk===today;
-      // Skip if consumed by a rowspan from above
-      if(consumed[dk][sk]){
-        return; // td already covered
-      }
-      var tasks=(taskMap[dk][sk]||[]);
-      tasks.sort(function(a,b){return a.priority-b.priority;});
-
-      // Determine max rowspan needed for tasks starting here
-      var maxSpan=1;
-      tasks.forEach(function(t){
-        if(t._slotInfo&&t._slotInfo.span>maxSpan) maxSpan=t._slotInfo.span;
-      });
-
-      // Mark consumed slots for this day
-      if(maxSpan>1&&!isExtra){
-        var slotIdx=ALL_SLOTS.indexOf(sk);
-        for(var s=1;s<maxSpan&&(slotIdx+s)<ALL_SLOTS.length;s++){
-          consumed[dk][ALL_SLOTS[slotIdx+s]]=true;
-        }
-      }
-
-      var rowspan=maxSpan>1?' rowspan="'+maxSpan+'"':'';
-      tbody+='<td'+rowspan+' style="'+(isToday?'background:#fafeff;':'')+'padding:3px;vertical-align:top;">';
-
-      if(tasks.length>0){
-        // Horizontal flex layout for tasks
-        tbody+='<div style="display:flex;flex-wrap:wrap;gap:3px;height:100%;align-content:flex-start;">';
-        tasks.forEach(function(t){tbody+=taskBlock(t);});
-        tbody+='</div>';
-      }
-      var addBtn=document.createElement('button');
-      addBtn.style.cssText='width:100%;background:none;border:none;color:#ddd;font-size:14px;cursor:pointer;padding:1px 0;line-height:1;display:block';
-      addBtn.title='Agregar tarea aqui';
-      addBtn.textContent='+';
-      addBtn.onmouseover=function(){this.style.color='#aaa';};
-      addBtn.onmouseout=function(){this.style.color='#ddd';};
-      (function(d,s,fp){addBtn.onclick=function(){openModal({prefDate:d,prefSlot:s,prefPerson:fp});};;})(dk,sk,filterPid||null);
-      tbody+='<span id="addbtn-'+dk+'-'+sk.replace(':','')+'"></span>';
-      addBtns.push({id:'addbtn-'+dk+'-'+sk.replace(':',''),el:addBtn});
-      tbody+='</td>';
-    });
-    tbody+='</tr>';
+    headersHtml+='<div style="flex:1;min-width:'+COL_W+'px;text-align:center;padding:6px 2px;font-size:11px;font-weight:600;color:#888;border-bottom:1px solid #e5e5e3;border-right:1px solid #f0f0f0;'+(isToday?'background:#E6F1FB;':'')+'">';
+    headersHtml+=DAYS[i]+'<br><span style="font-weight:400;font-size:10px">'+fmtDate(d)+'</span>';
+    if(missed>0) headersHtml+='<br><span style="font-size:9px;background:#FCEBEB;color:#791F1F;padding:1px 4px;border-radius:5px;font-weight:600">'+missed+' incumpl.</span>';
+    headersHtml+='</div>';
   });
-  tbody+='</tbody>';
+  headersHtml+='</div>';
 
-  var html=legendHtml+
-    '<div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e5e3;">'+
-      '<table style="width:100%;border-collapse:collapse;min-width:'+(62+dates.length*minColW)+'px;background:#fff;">'+
-        thead+tbody+
-      '</table>'+
+  // Body: time axis + day columns
+  var bodyHtml='<div style="display:flex;overflow-x:auto;">';
+  bodyHtml+=timeAxisHtml();
+  bodyHtml+='<div style="display:flex;flex:1;min-width:'+(dkeys.length*COL_W)+'px;border-left:1px solid #e5e5e3;">';
+  dates.forEach(function(d,i){
+    var dk=dkeys[i];
+    bodyHtml+='<div style="flex:1;min-width:'+COL_W+'px;border-right:1px solid #f0f0f0;">';
+    bodyHtml+=dayHtml(dk);
+    bodyHtml+='</div>';
+  });
+  bodyHtml+='</div></div>';
+
+  return legendHtml+
+    '<div style="border-radius:10px;border:1px solid #e5e5e3;overflow:hidden;background:#fff;">'+
+      headersHtml+
+      '<div style="overflow-x:auto;">'+
+        '<div style="display:flex;min-width:'+(62+dkeys.length*COL_W)+'px;">'+
+          timeAxisHtml()+
+          '<div style="display:flex;flex:1;min-width:'+(dkeys.length*COL_W)+'px;border-left:1px solid #e5e5e3;">'+
+          dkeys.map(function(dk,i){
+            return '<div style="flex:1;min-width:'+COL_W+'px;border-right:1px solid #f0f0f0;">'+dayHtml(dk)+'</div>';
+          }).join('')+
+          '</div>'+
+        '</div>'+
+      '</div>'+
     '</div>';
-  // Attach add buttons after render via setTimeout
-  setTimeout(function(){
-    addBtns.forEach(function(b){
-      var el=document.getElementById(b.id);
-      if(el&&el.parentNode) el.parentNode.insertBefore(b.el,el.nextSibling);
-    });
-  },0);
-  return html;
 }
 
 

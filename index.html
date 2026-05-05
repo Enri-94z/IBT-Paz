@@ -210,6 +210,26 @@ function deleteTask(id){
     }).catch(function(){showToast('Error al eliminar');});
 }
 
+function moveToNextDay(id){
+  var t=state.tasks.find(function(x){return x.id===id;});
+  if(!t) return;
+  var d=new Date(t.date+'T12:00:00');
+  d.setDate(d.getDate()+1);
+  var newDate=dateKey(d);
+  var missed=(t.missed_dates||[]).slice();
+  if(missed.indexOf(t.date)<0) missed.push(t.date);
+  closeModal();
+  updateTask(id,{date:newDate,missed_dates:missed}).then(function(){showToast('Tarea movida al '+fmtDateShort(newDate));});
+}
+
+function markDone(id){
+  var t=state.tasks.find(function(x){return x.id===id;});
+  if(!t) return;
+  var newDone=!t.done;
+  closeModal();
+  updateTask(id,{done:newDone,pct:newDone?100:t.pct}).then(function(){showToast(newDone?'Tarea completada':'Tarea reabierta');});
+}
+
 function uploadEvidence(taskId,file){
   var path=taskId+'/'+Date.now()+'_'+file.name;
   setSyncing(true);
@@ -350,9 +370,18 @@ function openModal(opts){
     evHtml='<div class="fg"><div class="fl">Evidencias</div><div class="evidence-list">'+evItems+'</div><input type="file" id="m-evidence" multiple style="margin-top:6px;font-size:12px" accept="image/*,.pdf,.xlsx,.csv,.txt"></div>';
   }
   var delBtn=t?'<button class="btn btn-d" onclick="deleteTask(\''+t.id+'\')">Eliminar</button>':'';
+  var actionBtns=t?
+    '<div style="display:flex;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e5e3;">'+
+      '<button class="btn" style="flex:1;font-size:11px;" onclick="moveToNextDay(\'' +t.id+ '\')">Dia siguiente</button>'+
+      '<button class="btn" style="flex:1;font-size:11px;background:'+(t.done?'#7C3AED':'#f0eeff')+';color:'+(t.done?'#fff':'#4C1D95')+';border-color:#7C3AED;" onclick="markDone(\'' +t.id+ '\')">'+
+        (t.done?'Completada - Reabrir':'Marcar completa')+
+      '</button>'+
+    '</div>'
+  :'';
 
   document.getElementById('modal-content').innerHTML=
     '<div class="modal-title">'+(t?'Editar tarea':'Nueva tarea')+'</div>'+
+    actionBtns+
     '<div class="fg"><div class="fl">Descripcion</div><input class="fi" id="m-desc" value="'+defDesc.replace(/"/g,'&quot;')+'" placeholder="Que hay que hacer?"></div>'+
     '<div class="fi-row">'+
       '<div class="fg"><div class="fl">Persona</div><select class="fi" id="m-person">'+personOpts+'</select></div>'+
@@ -509,8 +538,8 @@ function renderCalendar(filterPid){
         'height:'+heightPx+'px;'+
         'left:'+leftPct+'%;'+
         'width:'+(colW-0.5)+'%;'+
-        'background:'+pr.bg+';'+
-        'border-left:3px solid '+pr.color+';'+
+        'background:'+(t.done?'#EDE9FE':pr.bg)+';'+
+        'border-left:3px solid '+(t.done?'#7C3AED':pr.color)+';'+
         'border-radius:4px;'+
         'padding:2px 4px;'+
         'cursor:pointer;'+
@@ -575,9 +604,12 @@ function renderCalendar(filterPid){
     var dk=dkeys[i];
     var allT=state.tasks.filter(function(t){return t.date===dk&&(filterPid?t.person===filterPid:true);});
     var missed=allT.filter(function(t){return t.missed_dates&&t.missed_dates.length>0;}).length;
+    var dDone=allT.filter(function(t){return t.done;}).length;
+    var dTotal=allT.length;
     var isToday=dk===today;
     headersHtml+='<div style="flex:1;min-width:'+COL_W+'px;text-align:center;padding:6px 2px;font-size:11px;font-weight:600;color:#888;border-bottom:1px solid #e5e5e3;border-right:1px solid #f0f0f0;'+(isToday?'background:#E6F1FB;':'')+'">';
     headersHtml+=DAYS[i]+'<br><span style="font-weight:400;font-size:10px">'+fmtDate(d)+'</span>';
+    if(dTotal>0) headersHtml+='<br><span style="font-size:10px;background:'+(dDone===dTotal&&dTotal>0?'#7C3AED':'#f0eeff')+';color:'+(dDone===dTotal&&dTotal>0?'#fff':'#4C1D95')+';padding:1px 6px;border-radius:8px;font-weight:600">'+dDone+'/'+dTotal+' ✓</span>';
     if(missed>0) headersHtml+='<br><span style="font-size:9px;background:#FCEBEB;color:#791F1F;padding:1px 4px;border-radius:5px;font-weight:600">'+missed+' incumpl.</span>';
     headersHtml+='</div>';
   });
@@ -649,7 +681,8 @@ function renderPersonRow(){
       '<div class="person-chip-name">'+p.name+'</div>'+
       '<div class="person-stats"><span class="ps-num">'+s.done+'/'+s.total+'</span><span class="ps-num" style="color:'+p.color+';font-weight:600">'+s.pct+'%</span></div>'+
       '<div class="bar-wrap"><div class="bar-fill" style="width:'+s.pct+'%;background:'+p.color+'"></div></div>'+
-      (missed>0?'<div style="text-align:center"><span class="missed-badge">'+missed+' incumplida'+(missed>1?'s':'')+'</span></div>':'')+
+      '<div style="text-align:center;margin-top:4px"><span style="font-size:10px;background:'+(s.done===s.total&&s.total>0?'#7C3AED':'#f0eeff')+';color:'+(s.done===s.total&&s.total>0?'#fff':'#4C1D95')+';padding:2px 8px;border-radius:8px;font-weight:600">'+s.done+'/'+s.total+' completadas</span></div>'+
+      (missed>0?'<div style="text-align:center;margin-top:3px"><span class="missed-badge">'+missed+' incumplida'+(missed>1?'s':'')+'</span></div>':'')+
     '</div>';
   }).join('')+'</div>';
 }

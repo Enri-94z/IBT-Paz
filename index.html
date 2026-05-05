@@ -410,18 +410,83 @@ function renderCalendar(filterPid){
   var ws=getWeekStart(state.weekOffset);
   var dates=[];for(var i=0;i<6;i++) dates.push(addDays(ws,i));
   var dkeys=dates.map(dateKey);
+  var today=todayKey();
 
+  // Hour slots 8-19 plus pre/post
+  var HOURS=[];
+  for(var h=8;h<=19;h++) HOURS.push(h);
+  var ALL_SLOTS=['pre'].concat(HOURS.map(function(h){return h+':00';})).concat(['post']);
+  var SLOT_LABEL={'pre':'Antes 8am','post':'Despues 7pm'};
+  HOURS.forEach(function(h){SLOT_LABEL[h+':00']=h+':00';});
+
+  // Build per-day per-slot task list
+  // taskMap[dk][slotKey] = [tasks that START in this slot]
   var taskMap={};
-  TIME_SLOTS.forEach(function(s){
-    taskMap[s.key]={};
-    dkeys.forEach(function(dk){taskMap[s.key][dk]=[];});
+  dkeys.forEach(function(dk){
+    taskMap[dk]={};
+    ALL_SLOTS.forEach(function(sk){taskMap[dk][sk]=[];});
   });
+
+  // For each task, determine which slot it starts in and how many slots it spans
+  function getSlotInfo(t){
+    if(!t.time_start||!t.time_end){
+      return {startSlot:t.slot||'pre', span:1};
+    }
+    var sm=timeToMinutes(t.time_start);
+    var em=timeToMinutes(t.time_end);
+    var sh=Math.floor(sm/60);
+    var eh=Math.floor(em/60);
+    if(em%60>0) eh=eh; // partial hour still counts as that hour
+    var startSlot=sh<8?'pre':(sh>=19?'post':sh+':00');
+    // Count how many hour slots the task covers
+    var span=1;
+    if(startSlot!=='pre'&&startSlot!=='post'&&em>sm){
+      var startH=sh<8?8:(sh>=19?19:sh);
+      var endH=eh>19?19:eh;
+      span=Math.max(1,endH-startH);
+      if(em%60>0&&endH<19) span+=0; // partial last hour already counted
+    }
+    return {startSlot:startSlot, span:span};
+  }
+
   state.tasks.filter(function(t){
     return dkeys.indexOf(t.date)>=0&&(filterPid?t.person===filterPid:true);
   }).forEach(function(t){
-    var sk=taskStartSlot(t);
-    if(taskMap[sk]&&taskMap[sk][t.date]!==undefined) taskMap[sk][t.date].push(t);
+    var info=getSlotInfo(t);
+    t._slotInfo=info;
+    if(taskMap[t.date]&&taskMap[t.date][info.startSlot]!==undefined){
+      taskMap[t.date][info.startSlot].push(t);
+    }
   });
+
+  // For rowspan: track which day+slot cells are "consumed" by a spanning task
+  // consumed[dk][slotKey] = true means skip this cell (covered by rowspan above)
+  var consumed={};
+  dkeys.forEach(function(dk){consumed[dk]={};});
+
+  function taskBlock(t){
+    var p=PERSONS.find(function(x){return x.id===t.person;});
+    var pr=PRIO[t.priority-1];
+    var timeStr=t.time_start&&t.time_end?t.time_start+'-'+t.time_end:'';
+    var evCount=t.evidence_paths&&t.evidence_paths.length>0?' +'+t.evidence_paths.length+'arch':'';
+    var movedMark=t.missed_dates&&t.missed_dates.length>0?' mov'+t.missed_dates.length+'x':'';
+    return '<div onclick="openModal({editId:''+t.id+''})" title="'+t.description+(timeStr?' ('+timeStr+')':'')+'" style="'+
+      'background:'+pr.bg+';border-left:3px solid '+pr.color+';border-radius:4px;'+
+      'padding:3px 5px;cursor:pointer;font-size:10px;line-height:1.35;margin-bottom:2px;'+
+      (t.done?'opacity:.5;':'')+
+      '">'+
+      '<div style="display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-bottom:1px">'+
+        '<span style="background:'+pr.color+';color:#fff;padding:0 3px;border-radius:2px;font-size:8px;font-weight:700">'+pr.label+'</span>'+
+        '<span style="background:'+p.bg+';color:'+p.tc+';padding:0 3px;border-radius:2px;font-size:8px;font-weight:700;border:1px solid '+p.color+'">'+p.initial+'</span>'+
+        spBadges(t.subprojects)+
+      '</div>'+
+      '<div style="font-weight:600;color:'+pr.tc+';'+(t.done?'text-decoration:line-through;':'')+'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t.description+'</div>'+
+      (timeStr?'<div style="font-size:9px;color:'+pr.tc+';opacity:.75">'+timeStr+evCount+movedMark+'</div>':'')+
+      '<div style="height:2px;background:rgba(0,0,0,.1);border-radius:1px;margin-top:2px">'+
+        '<div style="height:100%;width:'+t.pct+'%;background:'+pr.color+';border-radius:1px"></div>'+
+      '</div>'+
+    '</div>';
+  }
 
   var legendHtml='<div class="legend" style="margin-bottom:10px">'+
     PRIO.map(function(p){return '<span class="legend-item"><span class="legend-dot" style="background:'+p.color+'"></span>'+p.label+'</span>';}).join('')+
@@ -429,54 +494,78 @@ function renderCalendar(filterPid){
     '<span style="display:flex;gap:4px">'+SUBPROJECTS.map(function(sp){return '<span class="sp-badge" style="background:'+sp.bg+';color:'+sp.tc+';border-color:'+sp.color+'">'+sp.code+'</span>';}).join('')+'</span>'+
   '</div>';
 
-  var today=todayKey();
-  var thead='<thead><tr><th style="width:58px"></th>'+dates.map(function(d,i){
+  // Thead: each day gets its own column (no sub-columns per person — tasks stack horizontally within cell)
+  var minColW=160; // wider to allow horizontal task stacking
+  var thead='<thead><tr><th style="width:62px;min-width:62px"></th>'+dates.map(function(d,i){
     var dk=dkeys[i];
     var allT=state.tasks.filter(function(t){return t.date===dk&&(filterPid?t.person===filterPid:true);});
     var missed=allT.filter(function(t){return t.missed_dates&&t.missed_dates.length>0;}).length;
     var isToday=dk===today;
-    return '<th style="'+(isToday?'background:#E6F1FB;':'')+'">'+DAYS[i]+'<br><span style="font-weight:400;font-size:10px">'+fmtDate(d)+'</span>'+(missed>0?'<br><span style="font-size:9px;background:#FCEBEB;color:#791F1F;padding:1px 4px;border-radius:5px;font-weight:600">'+missed+' incumpl.</span>':'')+'</th>';
+    return '<th style="min-width:'+minColW+'px;'+(isToday?'background:#E6F1FB;':'')+'">'
+      +DAYS[i]+'<br><span style="font-weight:400;font-size:10px">'+fmtDate(d)+'</span>'
+      +(missed>0?'<br><span style="font-size:9px;background:#FCEBEB;color:#791F1F;padding:1px 4px;border-radius:5px;font-weight:600">'+missed+' incumpl.</span>':'')+
+    '</th>';
   }).join('')+'</tr></thead>';
 
+  var ROW_H=52; // px per hour row — tall enough to show task content
+
   var tbody='<tbody>';
-  TIME_SLOTS.forEach(function(slot){
-    var isExtra=slot.key==='pre'||slot.key==='post';
-    tbody+='<tr><td class="time-cell" style="'+(isExtra?'color:#bbb;font-size:9px;font-weight:400;':'')+'">'+slot.label+'</td>';
+  ALL_SLOTS.forEach(function(sk){
+    var isExtra=sk==='pre'||sk==='post';
+    var rowH=isExtra?(ROW_H*0.7)+'px':ROW_H+'px';
+    tbody+='<tr style="height:'+rowH+'">';
+    tbody+='<td class="time-cell" style="height:'+rowH+';'+(isExtra?'color:#bbb;font-size:9px;font-weight:400;':'')+'">'+SLOT_LABEL[sk]+'</td>';
+
     dkeys.forEach(function(dk){
       var isToday=dk===today;
-      var tasks=(taskMap[slot.key]&&taskMap[slot.key][dk])||[];
+      // Skip if consumed by a rowspan from above
+      if(consumed[dk][sk]){
+        return; // td already covered
+      }
+      var tasks=(taskMap[dk][sk]||[]);
       tasks.sort(function(a,b){return a.priority-b.priority;});
-      tbody+='<td style="'+(isToday?'background:#fafeff;':'')+'padding:3px;vertical-align:top;">';
+
+      // Determine max rowspan needed for tasks starting here
+      var maxSpan=1;
+      tasks.forEach(function(t){
+        if(t._slotInfo&&t._slotInfo.span>maxSpan) maxSpan=t._slotInfo.span;
+      });
+
+      // Mark consumed slots for this day
+      if(maxSpan>1&&!isExtra){
+        var slotIdx=ALL_SLOTS.indexOf(sk);
+        for(var s=1;s<maxSpan&&(slotIdx+s)<ALL_SLOTS.length;s++){
+          consumed[dk][ALL_SLOTS[slotIdx+s]]=true;
+        }
+      }
+
+      var rowspan=maxSpan>1?' rowspan="'+maxSpan+'"':'';
+      tbody+='<td'+rowspan+' style="'+(isToday?'background:#fafeff;':'')+'padding:3px;vertical-align:top;">';
+
       if(tasks.length>0){
-        tbody+='<div style="display:flex;flex-wrap:wrap;gap:3px;">';
-        tasks.forEach(function(t){
-          var p=PERSONS.find(function(x){return x.id===t.person;});
-          var pr=PRIO[t.priority-1];
-          var timeStr=t.time_start&&t.time_end?t.time_start+'-'+t.time_end:'';
-          var evCount=t.evidence_paths&&t.evidence_paths.length>0?' - '+t.evidence_paths.length+'arch':'';
-          var movedMark=t.missed_dates&&t.missed_dates.length>0?' - mov'+t.missed_dates.length+'x':'';
-          tbody+='<div onclick="openModal({editId:\''+t.id+'\'})" title="'+t.description+(timeStr?' ('+timeStr+')':'')+'" style="background:'+pr.bg+';border-left:3px solid '+pr.color+';border-radius:4px;padding:3px 6px;cursor:pointer;font-size:10px;line-height:1.35;min-width:80px;max-width:180px;flex:1;'+(t.done?'opacity:.5;':'')+'">'+
-            '<div style="display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-bottom:1px">'+
-              '<span style="background:'+pr.color+';color:#fff;padding:0 3px;border-radius:2px;font-size:8px;font-weight:700">'+pr.label+'</span>'+
-              '<span style="background:'+p.bg+';color:'+p.tc+';padding:0 3px;border-radius:2px;font-size:8px;font-weight:700;border:1px solid '+p.color+'">'+p.initial+'</span>'+
-              spBadges(t.subprojects)+
-            '</div>'+
-            '<div style="font-weight:600;color:'+pr.tc+';'+(t.done?'text-decoration:line-through;':'')+'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t.description+'</div>'+
-            (timeStr?'<div style="font-size:9px;color:'+pr.tc+';opacity:.75">'+timeStr+evCount+movedMark+'</div>':'')+
-            '<div style="height:2px;background:rgba(0,0,0,.1);border-radius:1px;margin-top:2px"><div style="height:100%;width:'+t.pct+'%;background:'+pr.color+';border-radius:1px"></div></div>'+
-          '</div>';
-        });
+        // Horizontal flex layout for tasks
+        tbody+='<div style="display:flex;flex-wrap:wrap;gap:3px;height:100%;align-content:flex-start;">';
+        tasks.forEach(function(t){tbody+=taskBlock(t);});
         tbody+='</div>';
       }
-      tbody+='<button style="width:100%;background:none;border:none;color:#ddd;font-size:14px;cursor:pointer;padding:1px 0;line-height:1;display:block" onmouseover="this.style.color=\'#aaa\'" onmouseout="this.style.color=\'#ddd\'" onclick="openModal({prefDate:\''+dk+'\',prefSlot:\''+slot.key+'\''+(filterPid?',prefPerson:\''+filterPid+'\'':'')+'})" title="Agregar tarea aqui">+</button>';
+      tbody+='<button style="width:100%;background:none;border:none;color:#ddd;font-size:14px;cursor:pointer;padding:1px 0;line-height:1;display:block" '
+        +'onmouseover="this.style.color='#aaa'" onmouseout="this.style.color='#ddd'" '
+        +'onclick="openModal({prefDate:''+dk+'',prefSlot:''+sk+'''+(filterPid?',prefPerson:''+filterPid+''':'')+'})" '
+        +'title="Agregar tarea aqui">+</button>';
       tbody+='</td>';
     });
     tbody+='</tr>';
   });
   tbody+='</tbody>';
 
-  return legendHtml+'<div class="cal-wrap"><table class="cal-table">'+thead+tbody+'</table></div>';
+  return legendHtml+
+    '<div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e5e3;">'+
+      '<table style="width:100%;border-collapse:collapse;min-width:'+(62+dates.length*minColW)+'px;background:#fff;">'+
+        thead+tbody+
+      '</table>'+
+    '</div>';
 }
+
 
 function renderHomeStats(){
   var today=todayKey(),ws=getWeekStart(0);

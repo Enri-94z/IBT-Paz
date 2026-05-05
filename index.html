@@ -137,7 +137,7 @@ const DAYS=['Lun','Mar','Mie','Jue','Vie','Sab'];
 
 function buildSlots(){
   var s=[{key:'pre',label:'Antes 8am',hour:-1}];
-  for(var h=8;h<=19;h++) s.push({key:h+':00',label:h+':00',hour:h});
+  for(var h=7;h<=21;h++) s.push({key:h+':00',label:h+':00',hour:h});
   s.push({key:'post',label:'Despues 7pm',hour:99});
   return s;
 }

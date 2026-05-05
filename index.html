@@ -470,7 +470,8 @@ function renderCalendar(filterPid){
     var timeStr=t.time_start&&t.time_end?t.time_start+'-'+t.time_end:'';
     var evCount=t.evidence_paths&&t.evidence_paths.length>0?' +'+t.evidence_paths.length+'arch':'';
     var movedMark=t.missed_dates&&t.missed_dates.length>0?' mov'+t.missed_dates.length+'x':'';
-    return '<div onclick="openModal({editId:''+t.id+''})" title="'+t.description+(timeStr?' ('+timeStr+')':'')+'" style="'+
+    var eid=t.id;
+    return '<div onclick="openModal({editId:\'' +eid+ '\'})" title="'+t.description+(timeStr?' ('+timeStr+')':'')+'" style="'+
       'background:'+pr.bg+';border-left:3px solid '+pr.color+';border-radius:4px;'+
       'padding:3px 5px;cursor:pointer;font-size:10px;line-height:1.35;margin-bottom:2px;'+
       (t.done?'opacity:.5;':'')+
@@ -507,8 +508,8 @@ function renderCalendar(filterPid){
     '</th>';
   }).join('')+'</tr></thead>';
 
-  var ROW_H=52; // px per hour row — tall enough to show task content
-
+  var ROW_H=52;
+  var addBtns=[];
   var tbody='<tbody>';
   ALL_SLOTS.forEach(function(sk){
     var isExtra=sk==='pre'||sk==='post';
@@ -548,22 +549,35 @@ function renderCalendar(filterPid){
         tasks.forEach(function(t){tbody+=taskBlock(t);});
         tbody+='</div>';
       }
-      tbody+='<button style="width:100%;background:none;border:none;color:#ddd;font-size:14px;cursor:pointer;padding:1px 0;line-height:1;display:block" '
-        +'onmouseover="this.style.color='#aaa'" onmouseout="this.style.color='#ddd'" '
-        +'onclick="openModal({prefDate:''+dk+'',prefSlot:''+sk+'''+(filterPid?',prefPerson:''+filterPid+''':'')+'})" '
-        +'title="Agregar tarea aqui">+</button>';
+      var addBtn=document.createElement('button');
+      addBtn.style.cssText='width:100%;background:none;border:none;color:#ddd;font-size:14px;cursor:pointer;padding:1px 0;line-height:1;display:block';
+      addBtn.title='Agregar tarea aqui';
+      addBtn.textContent='+';
+      addBtn.onmouseover=function(){this.style.color='#aaa';};
+      addBtn.onmouseout=function(){this.style.color='#ddd';};
+      (function(d,s,fp){addBtn.onclick=function(){openModal({prefDate:d,prefSlot:s,prefPerson:fp});};;})(dk,sk,filterPid||null);
+      tbody+='<span id="addbtn-'+dk+'-'+sk.replace(':','')+'"></span>';
+      addBtns.push({id:'addbtn-'+dk+'-'+sk.replace(':',''),el:addBtn});
       tbody+='</td>';
     });
     tbody+='</tr>';
   });
   tbody+='</tbody>';
 
-  return legendHtml+
+  var html=legendHtml+
     '<div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e5e3;">'+
       '<table style="width:100%;border-collapse:collapse;min-width:'+(62+dates.length*minColW)+'px;background:#fff;">'+
         thead+tbody+
       '</table>'+
     '</div>';
+  // Attach add buttons after render via setTimeout
+  setTimeout(function(){
+    addBtns.forEach(function(b){
+      var el=document.getElementById(b.id);
+      if(el&&el.parentNode) el.parentNode.insertBefore(b.el,el.nextSibling);
+    });
+  },0);
+  return html;
 }
 
 

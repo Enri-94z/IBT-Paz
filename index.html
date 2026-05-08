@@ -86,6 +86,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .missed-day-chip{font-size:10px;background:#FCEBEB;color:#791F1F;padding:2px 7px;border-radius:8px;display:inline-block;margin:2px;font-weight:500}
 .section-label{font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:2px}
 .section-sub{font-size:10px;color:#888;font-weight:500;margin-bottom:4px}
+
+.login-screen{position:fixed;top:0;left:0;right:0;bottom:0;background:#f5f5f3;display:flex;align-items:center;justify-content:center;z-index:1000}
+.login-box{background:#fff;border:1px solid #e5e5e3;border-radius:16px;padding:36px 32px;width:340px;max-width:95vw;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.login-logo{font-size:22px;font-weight:700;color:#1a1a1a;margin-bottom:4px}
+.login-sub{font-size:12px;color:#888;margin-bottom:28px}
+.login-error{font-size:12px;color:#A32D2D;background:#FCEBEB;padding:8px 12px;border-radius:8px;margin-bottom:12px;display:none}
+.login-error.show{display:block}
 </style>
 </head>
 <body>
@@ -98,6 +105,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="topbar-right">
     <span id="sync-indicator"><span class="sync-dot" id="sync-dot"></span><span id="sync-text">Conectando...</span></span>
     <span id="topbar-date"></span>
+    <span id="topbar-user" style="font-weight:600;color:#185FA5"></span>
+    <button onclick="doLogout()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #e5e5e3;background:transparent;cursor:pointer;font-family:inherit;color:#888">Salir</button>
   </div>
 </div>
 
@@ -108,7 +117,90 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="modal" id="modal-content"></div>
 </div>
 
+<div id="login-screen" class="login-screen">
+  <div class="login-box">
+    <div class="login-logo">LT01</div>
+    <div class="login-sub">Gestor de proyecto · Acceso del equipo</div>
+    <div class="login-error" id="login-error">Usuario o contraseña incorrectos</div>
+    <div class="fg" style="margin-bottom:12px">
+      <div class="fl">Usuario</div>
+      <select class="fi" id="login-user">
+        <option value="">Selecciona tu nombre...</option>
+        <option value="g">Gabriela</option>
+        <option value="a">Anayeli</option>
+        <option value="f">Fernanda</option>
+        <option value="e">Enrique</option>
+        <option value="admin">Administrador</option>
+      </select>
+    </div>
+    <div class="fg" style="margin-bottom:20px">
+      <div class="fl">Contraseña</div>
+      <input class="fi" type="password" id="login-pass" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-p" onclick="doLogin()" style="width:100%;padding:10px;font-size:14px">Entrar</button>
+  </div>
+</div>
+
 <script>
+
+// ── Passwords (change these!) ──────────────────────────────────
+var PASSWORDS={
+  'g':'gabriela2025',
+  'a':'anayeli2025',
+  'f':'fernanda2025',
+  'e':'enrique2025',
+  'admin':'lt01admin'
+};
+
+var currentUser=null;
+
+function doLogin(){
+  var user=document.getElementById('login-user').value;
+  var pass=document.getElementById('login-pass').value;
+  var err=document.getElementById('login-error');
+  if(!user){err.textContent='Selecciona tu nombre.';err.classList.add('show');return;}
+  if(PASSWORDS[user]&&pass===PASSWORDS[user]){
+    currentUser=user;
+    localStorage.setItem('lt01_user',user);
+    localStorage.setItem('lt01_ts',Date.now().toString());
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('topbar-user').textContent=userLabel(user);
+    err.classList.remove('show');
+  } else {
+    err.textContent='Usuario o contrasena incorrectos.';
+    err.classList.add('show');
+    document.getElementById('login-pass').value='';
+  }
+}
+
+function doLogout(){
+  localStorage.removeItem('lt01_user');
+  localStorage.removeItem('lt01_ts');
+  currentUser=null;
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('login-pass').value='';
+  document.getElementById('login-user').value='';
+}
+
+function userLabel(u){
+  var map={g:'Gabriela',a:'Anayeli',f:'Fernanda',e:'Enrique',admin:'Admin'};
+  return map[u]||u;
+}
+
+function checkSession(){
+  var u=localStorage.getItem('lt01_user');
+  var ts=parseInt(localStorage.getItem('lt01_ts')||'0');
+  var age=Date.now()-ts;
+  var MAX=8*60*60*1000; // 8 hours session
+  if(u&&PASSWORDS[u]&&age<MAX){
+    currentUser=u;
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('topbar-user').textContent=userLabel(u);
+    return true;
+  }
+  return false;
+}
+
 const SUPABASE_URL='https://lyxpcbrbyhzgxoyjvoxi.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5eHBjYnJieWh6Z3hveWp2b3hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjYwODUsImV4cCI6MjA5MzUwMjA4NX0.GCJPRfMR7MLoNiDGo1ATEHGCMzWE7iPC_QIe-AV2dGU';
 const STORAGE_URL=SUPABASE_URL+'/storage/v1';
@@ -137,7 +229,7 @@ const DAYS=['Lun','Mar','Mie','Jue','Vie','Sab'];
 
 function buildSlots(){
   var s=[{key:'pre',label:'Antes 8am',hour:-1}];
-  for(var h=7;h<=21;h++) s.push({key:h+':00',label:h+':00',hour:h});
+  for(var h=8;h<=19;h++) s.push({key:h+':00',label:h+':00',hour:h});
   s.push({key:'post',label:'Despues 7pm',hour:99});
   return s;
 }
@@ -157,7 +249,7 @@ function taskStartSlot(t){
   return h+':00';
 }
 
-var state={view:'home',mainTab:'calendario',weekOffset:0,selectedPerson:null,reportFilter:'person',tasks:[]};
+var state={view:'home',mainTab:'calendario',weekOffset:0,selectedPerson:null,reportFilter:'person',historyWeek:-1,historyFilter:'person',historyView:'calendar',reportFrom:-4,reportTo:-1,tasks:[]};
 
 var hdrs={'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
 
@@ -213,13 +305,23 @@ function deleteTask(id){
 function moveToNextDay(id){
   var t=state.tasks.find(function(x){return x.id===id;});
   if(!t) return;
+  var motivo=prompt('Motivo de posposicion (no puede quedar vacio):','');
+  if(motivo===null) return;
+  motivo=(motivo||'').trim();
+  if(!motivo){alert('Debe escribir el motivo para posponer la tarea.');return;}
   var d=new Date(t.date+'T12:00:00');
   d.setDate(d.getDate()+1);
   var newDate=dateKey(d);
   var missed=(t.missed_dates||[]).slice();
   if(missed.indexOf(t.date)<0) missed.push(t.date);
+  var log=(t.postponed_log||[]).slice();
+  log.push({from:t.date,to:newDate,motivo:motivo,ts:new Date().toISOString()});
+  // Save original_date only on first postpone
+  var originalDate=t.original_date&&t.original_date!==''?t.original_date:t.date;
   closeModal();
-  updateTask(id,{date:newDate,missed_dates:missed}).then(function(){showToast('Tarea movida al '+fmtDateShort(newDate));});
+  updateTask(id,{date:newDate,missed_dates:missed,postponed_log:log,original_date:originalDate}).then(function(){
+    showToast('Tarea pospuesta al '+fmtDateShort(newDate));
+  });
 }
 
 function markDone(id){
@@ -354,6 +456,7 @@ function openModal(opts){
   var defPct=t?t.pct:0;
   var defDesc=t?t.description:'';
   var defSPs=t&&t.subprojects?t.subprojects:[];
+  var defNotes=t&&t.notes?t.notes.replace(/'/g,"\'"):'';
   var evs=t&&t.evidence_paths?t.evidence_paths:[];
 
   var personOpts=PERSONS.map(function(p){return '<option value="'+p.id+'"'+(defPerson===p.id?' selected':'')+'>'+p.name+'</option>';}).join('');
@@ -370,11 +473,21 @@ function openModal(opts){
     evHtml='<div class="fg"><div class="fl">Evidencias</div><div class="evidence-list">'+evItems+'</div><input type="file" id="m-evidence" multiple style="margin-top:6px;font-size:12px" accept="image/*,.pdf,.xlsx,.csv,.txt"></div>';
   }
   var delBtn=t?'<button class="btn btn-d" onclick="deleteTask(\''+t.id+'\')">Eliminar</button>':'';
+  var postLog=t&&t.postponed_log&&t.postponed_log.length>0?
+    '<div style="margin-bottom:12px;padding:8px 10px;background:#FEF3C7;border-radius:8px;border-left:3px solid #F59E0B;">'+
+      '<div style="font-size:10px;font-weight:600;color:#92400E;margin-bottom:4px">Historial de posposiciones</div>'+
+      t.postponed_log.map(function(e){return '<div style="font-size:10px;color:#78350F;margin-bottom:2px">'+fmtDateShort(e.from)+' → '+fmtDateShort(e.to)+': '+e.motivo+'</div>';}).join('')+
+    '</div>'
+  :'';
+  var notesDisplay=t&&t.notes&&t.notes.trim()?
+    '<div style="margin-bottom:10px;padding:6px 10px;background:#F0FDF4;border-radius:8px;border-left:3px solid #22C55E;font-size:11px;color:#166534;white-space:pre-wrap;">'+t.notes+'</div>'
+  :'';
   var actionBtns=t?
+    postLog+
     '<div style="display:flex;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e5e3;">'+
-      '<button class="btn" style="flex:1;font-size:11px;" onclick="moveToNextDay(\'' +t.id+ '\')">Dia siguiente</button>'+
+      '<button class="btn" style="flex:1;font-size:11px;" onclick="moveToNextDay(\'' +t.id+ '\')">&#8594; Dia siguiente</button>'+
       '<button class="btn" style="flex:1;font-size:11px;background:'+(t.done?'#7C3AED':'#f0eeff')+';color:'+(t.done?'#fff':'#4C1D95')+';border-color:#7C3AED;" onclick="markDone(\'' +t.id+ '\')">'+
-        (t.done?'Completada - Reabrir':'Marcar completa')+
+        (t.done?'&#10003; Completada - Reabrir':'Marcar completa')+
       '</button>'+
     '</div>'
   :'';
@@ -394,6 +507,7 @@ function openModal(opts){
     '<div class="fg"><div class="fl">Prioridad</div><select class="fi" id="m-priority">'+prioOpts+'</select></div>'+
     '<div class="fg"><div class="fl">Subproyectos</div><div class="sp-checks">'+spChecks+'</div></div>'+
     '<div class="fg"><div class="fl">% avance</div><div class="pct-row"><input type="range" min="0" max="100" step="5" value="'+defPct+'" id="m-pct" oninput="document.getElementById(\'m-pct-v\').textContent=this.value+\'%\'"><span class="pct-val" id="m-pct-v">'+defPct+'%</span></div></div>'+
+    '<div class="fg"><div class="fl">Notas</div><textarea class="fi" id="m-notes" rows="3" style="resize:vertical;font-family:inherit;font-size:12px" placeholder="Observaciones, avances, pendientes...">'+defNotes+'</textarea></div>'+
     evHtml+
     '<div class="mac">'+delBtn+'<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="saveModalTask(\''+(t?t.id:'')+'\')">Guardar</button></div>';
 
@@ -415,9 +529,10 @@ function saveModalTask(editId){
   var time_end=document.getElementById('m-tend').value||'';
   var pct=parseInt(document.getElementById('m-pct').value);
   var subprojects=Array.from(document.querySelectorAll('.sp-cb:checked')).map(function(x){return x.value;});
+  var notes=document.getElementById('m-notes')?document.getElementById('m-notes').value:'';
   var done=pct===100;
   var slot=time_start||'pre';
-  var payload={description:desc,person:person,date:date,slot:slot,priority:priority,time_start:time_start,time_end:time_end,pct:pct,done:done,subprojects:subprojects};
+  var payload={description:desc,person:person,date:date,slot:slot,priority:priority,time_start:time_start,time_end:time_end,pct:pct,done:done,subprojects:subprojects,notes:notes};
   var evInput=document.getElementById('m-evidence');
   closeModal();
   if(editId){
@@ -444,7 +559,7 @@ function renderCalendar(filterPid){
   var START_H=8, END_H=19;
   var TOTAL_HOURS=END_H-START_H;
   var ROW_PX=56;   // px per hour row
-  var COL_W=180;   // min px per day column
+  var COL_W=540;   // min px per day column
 
   function tMin(str){ if(!str) return null; var p=str.split(':'); return parseInt(p[0])*60+(parseInt(p[1])||0); }
   function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
@@ -652,6 +767,7 @@ function renderPersonRow(){
   return '<div class="person-row">'+PERSONS.map(function(p){
     var s=calcStats(getTasksForWeek(p.id,0));
     var missed=getMissedCount(p.id);
+    var postponed=state.tasks.filter(function(t){return t.person===p.id&&t.postponed_log&&t.postponed_log.length>0;}).length;
     var active=state.view==='person'&&state.selectedPerson===p.id;
     return '<div class="person-chip'+(active?' active':'')+'" style="'+(active?'border-color:'+p.color+';':'')+'" onclick="openPersonView(\''+p.id+'\')">'+
       '<div class="person-avatar" style="background:'+p.bg+';color:'+p.tc+'">'+p.initials+'</div>'+
@@ -660,6 +776,7 @@ function renderPersonRow(){
       '<div class="bar-wrap"><div class="bar-fill" style="width:'+s.pct+'%;background:'+p.color+'"></div></div>'+
       '<div style="text-align:center;margin-top:4px"><span style="font-size:10px;background:'+(s.done===s.total&&s.total>0?'#7C3AED':'#f0eeff')+';color:'+(s.done===s.total&&s.total>0?'#fff':'#4C1D95')+';padding:2px 8px;border-radius:8px;font-weight:600">'+s.done+'/'+s.total+' completadas</span></div>'+
       (missed>0?'<div style="text-align:center;margin-top:3px"><span class="missed-badge">'+missed+' incumplida'+(missed>1?'s':'')+'</span></div>':'')+
+      (postponed>0?'<div style="text-align:center;margin-top:2px"><span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:8px;font-weight:600">'+postponed+' pospuesta'+(postponed>1?'s':'')+'</span></div>':'')+
     '</div>';
   }).join('')+'</div>';
 }
@@ -746,10 +863,212 @@ function renderReports(){
   return html;
 }
 
+function getHistoryTasks(dkeys){
+  // Tasks that appear in these dates OR were originally scheduled here
+  return state.tasks.filter(function(t){
+    return dkeys.indexOf(t.date)>=0
+      || (t.original_date&&dkeys.indexOf(t.original_date)>=0);
+  });
+}
+
+function postponeTag(t){
+  if(!t.original_date||t.original_date==='') return '';
+  return '<span style="font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:4px;font-weight:600;margin-left:3px;">Pospuesta desde '+fmtDateShort(t.original_date)+'</span>';
+}
+
+function renderHistoryCalendar(weekOffset){
+  // Temporarily override weekOffset for renderCalendar
+  var saved=state.weekOffset;
+  state.weekOffset=weekOffset;
+  var html=renderCalendar(null);
+  state.weekOffset=saved;
+  return html;
+}
+
+function buildWeekList(maxBack){
+  var weeks=[];
+  for(var i=1;i<=maxBack;i++){
+    var ws=getWeekStart(-i);
+    var we=addDays(ws,5);
+    var keys=[];for(var d=0;d<6;d++) keys.push(dateKey(addDays(ws,d)));
+    weeks.push({offset:-i,ws:ws,we:we,keys:keys,label:fmtDate(ws)+' - '+fmtDate(we)});
+  }
+  return weeks;
+}
+
+function renderHistory(){
+  var MAX_WEEKS=16;
+  var weeks=buildWeekList(MAX_WEEKS);
+  var view=state.historyView||'calendar'; // 'calendar' or 'report'
+  var selWeek=state.historyWeek!==undefined?state.historyWeek:-1;
+  var reportFrom=state.reportFrom!==undefined?state.reportFrom:-4;
+  var reportTo=state.reportTo!==undefined?state.reportTo:-1;
+  var reportFilter=state.historyFilter||'person';
+
+  // Top view toggle
+  var toggleHtml='<div style="display:flex;gap:6px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">'
+    +'<button class="filter-chip'+(view==='calendar'?' active':'')+'" onclick="setHistoryView(\x27calendar\x27)">Calendario historico</button>'
+    +'<button class="filter-chip'+(view==='report'?' active':'')+'" onclick="setHistoryView(\x27report\x27)">Reporte por rango</button>'
+    +'</div>';
+
+  if(view==='calendar'){
+    // Week selector
+    var tabsHtml='<div style="display:flex;gap:5px;overflow-x:auto;padding-bottom:8px;margin-bottom:14px;">';
+    weeks.forEach(function(w){
+      var active=w.offset===selWeek;
+      var wTasks=state.tasks.filter(function(t){return w.keys.indexOf(t.date)>=0;});
+      var s=calcStats(wTasks);
+      var tabStyle='flex-shrink:0;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:11px;font-weight:500;text-align:center;border:1px solid '+(active?'#185FA5':'#e5e5e3')+';background:'+(active?'#185FA5':'#fff')+';color:'+(active?'#fff':'#888')+';';
+      tabsHtml+='<div onclick="setHistoryWeek('+w.offset+')" style="'+tabStyle+'">'
+        +w.label
+        +(wTasks.length>0?'<br><span style="font-size:9px;opacity:.85;">'+s.done+'/'+wTasks.length+'</span>':'<br><span style="font-size:9px;opacity:.6;">Sin tareas</span>')
+        +'</div>';
+    });
+    tabsHtml+='</div>';
+
+    var selW=weeks.find(function(w){return w.offset===selWeek;});
+    if(!selW) return toggleHtml+tabsHtml;
+
+    var wTasks=state.tasks.filter(function(t){return selW.keys.indexOf(t.date)>=0;});
+    var s=calcStats(wTasks);
+    var postponed=wTasks.filter(function(t){return t.postponed_log&&t.postponed_log.length>0;}).length;
+
+    var summaryHtml='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">'
+      +'<div class="stat-card"><div class="stat-num">'+wTasks.length+'</div><div class="stat-lbl">Tareas</div></div>'
+      +'<div class="stat-card"><div class="stat-num">'+s.done+'</div><div class="stat-lbl">Completadas</div></div>'
+      +'<div class="stat-card"><div class="stat-num">'+s.pct+'%</div><div class="stat-lbl">Avance</div></div>'
+      +'<div class="stat-card"><div class="stat-num">'+postponed+'</div><div class="stat-lbl">Pospuestas</div></div>'
+      +'</div>';
+
+    return toggleHtml+tabsHtml+summaryHtml+renderHistoryCalendar(selWeek);
+
+  } else {
+    // Range report
+    var fromOpts=weeks.map(function(w){
+      return '<option value="'+w.offset+'"'+(reportFrom===w.offset?' selected':'')+'>'+w.label+'</option>';
+    }).join('');
+    var toOpts=weeks.map(function(w){
+      return '<option value="'+w.offset+'"'+(reportTo===w.offset?' selected':'')+'>'+w.label+'</option>';
+    }).join('');
+
+    var rangeHtml='<div style="background:#fff;border:1px solid #e5e5e3;border-radius:10px;padding:14px;margin-bottom:14px;">'
+      +'<div style="font-size:13px;font-weight:600;margin-bottom:10px;">Rango del reporte</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;">'
+        +'<div class="fg" style="margin:0"><div class="fl">Desde semana</div>'
+          +'<select class="fi" id="rep-from" onchange="setReportRange()">'+fromOpts+'</select></div>'
+        +'<div class="fg" style="margin:0"><div class="fl">Hasta semana</div>'
+          +'<select class="fi" id="rep-to" onchange="setReportRange()">'+toOpts+'</select></div>'
+        +'<div style="display:flex;gap:6px;">'
+          +'<button class="filter-chip'+(reportFilter==='person'?' active':'')+'" onclick="setHistoryFilter(\x27person\x27)">Persona</button>'
+          +'<button class="filter-chip'+(reportFilter==='subproject'?' active':'')+'" onclick="setHistoryFilter(\x27subproject\x27)">Subproyecto</button>'
+        +'</div>'
+      +'</div>'
+      +'</div>';
+
+    // Collect all keys in range (from <= to, both negative offsets)
+    var fromIdx=Math.min(reportFrom,reportTo);
+    var toIdx=Math.max(reportFrom,reportTo);
+    var allKeys=[];
+    for(var wi=fromIdx;wi<=toIdx;wi++){
+      var ws2=getWeekStart(wi);
+      for(var d2=0;d2<6;d2++) allKeys.push(dateKey(addDays(ws2,d2)));
+    }
+    var rangeTasks=state.tasks.filter(function(t){return allKeys.indexOf(t.date)>=0;});
+    var rs=calcStats(rangeTasks);
+    var rPostponed=rangeTasks.filter(function(t){return t.postponed_log&&t.postponed_log.length>0;}).length;
+
+    var rangeSummary='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">'
+      +'<div class="stat-card"><div class="stat-num">'+rangeTasks.length+'</div><div class="stat-lbl">Tareas</div></div>'
+      +'<div class="stat-card"><div class="stat-num">'+rs.done+'</div><div class="stat-lbl">Completadas</div></div>'
+      +'<div class="stat-card"><div class="stat-num">'+rs.pct+'%</div><div class="stat-lbl">Avance</div></div>'
+      +'<div class="stat-card"><div class="stat-num">'+rPostponed+'</div><div class="stat-lbl">Pospuestas</div></div>'
+      +'</div>';
+
+    var cardsHtml='';
+    if(reportFilter==='person'){
+      PERSONS.forEach(function(p){
+        var ptasks=rangeTasks.filter(function(t){return t.person===p.id;});
+        if(!ptasks.length) return;
+        var ps=calcStats(ptasks);
+        var ppost=ptasks.filter(function(t){return t.postponed_log&&t.postponed_log.length>0;}).length;
+        cardsHtml+='<div class="report-card" style="margin-bottom:10px;">'
+          +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+            +'<div style="width:30px;height:30px;border-radius:50%;background:'+p.bg+';color:'+p.tc+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;">'+p.initials+'</div>'
+            +'<div style="flex:1;"><div style="font-size:14px;font-weight:600;">'+p.name+'</div>'
+            +'<div style="font-size:11px;color:#888;">'+ps.done+'/'+ps.total+' tareas - '+ps.pct+'%'+(ppost>0?' - '+ppost+' pospuesta'+(ppost>1?'s':''):'')+'</div></div>'
+          +'</div>'
+          +'<div class="bar-wrap" style="height:4px;margin-bottom:10px;"><div class="bar-fill" style="width:'+ps.pct+'%;background:'+p.color+';"></div></div>';
+        ptasks.sort(function(a,b){return a.date.localeCompare(b.date);}).forEach(function(t){
+          var pr=PRIO[t.priority-1];
+          var isPost=t.postponed_log&&t.postponed_log.length>0;
+          var origLabel=t.original_date&&t.original_date!==''?'<span style="font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:4px;font-weight:600;">Pospuesta desde '+fmtDateShort(t.original_date)+'</span>':'';
+          var evLinks=t.evidence_paths&&t.evidence_paths.length>0?
+            t.evidence_paths.map(function(path){
+              return '<a href="'+evidenceUrl(path)+'" target="_blank" style="font-size:9px;color:#185FA5;background:#E6F1FB;padding:1px 6px;border-radius:4px;text-decoration:none;margin-right:3px;">'+path.split('/').pop()+'</a>';
+            }).join(''):'';
+          cardsHtml+='<div class="report-task-row">'
+            +'<span style="font-size:9px;background:'+pr.color+';color:#fff;padding:2px 5px;border-radius:3px;font-weight:600;flex-shrink:0;margin-top:2px;">'+pr.label+'</span>'
+            +'<div style="flex:1;min-width:0;">'
+              +'<div style="font-size:12px;font-weight:600;'+(t.done?'text-decoration:line-through;opacity:.5;':'')+'">'
+                +t.description+' '+origLabel
+              +'</div>'
+              +'<div style="font-size:10px;color:#888;margin-top:2px;display:flex;gap:6px;flex-wrap:wrap;">'
+                +'<span>'+fmtDateShort(t.date)+'</span>'
+                +(t.time_start?'<span>'+t.time_start+'-'+t.time_end+'</span>':'')
+                +spBadges(t.subprojects)
+              +'</div>'
+              +(t.notes&&t.notes.trim()?'<div style="font-size:10px;color:#166534;background:#F0FDF4;padding:3px 6px;border-radius:4px;margin-top:3px;white-space:pre-wrap;">'+t.notes+'</div>':'')
+              +(isPost?'<div style="font-size:9px;color:#92400E;margin-top:2px;">'+t.postponed_log.map(function(e){return fmtDateShort(e.from)+' → '+fmtDateShort(e.to)+': '+e.motivo;}).join(' | ')+'</div>':'')
+              +(evLinks?'<div style="margin-top:3px;">'+evLinks+'</div>':'')
+            +'</div>'
+            +'<span style="font-size:12px;font-weight:600;color:'+(t.done?'#27500A':'#888')+';flex-shrink:0;">'+t.pct+'%</span>'
+          +'</div>';
+        });
+        cardsHtml+='</div>';
+      });
+    } else {
+      SUBPROJECTS.forEach(function(sp){
+        var stasks=rangeTasks.filter(function(t){return t.subprojects&&t.subprojects.indexOf(sp.id)>=0;});
+        if(!stasks.length) return;
+        var ss=calcStats(stasks);
+        cardsHtml+='<div class="report-card" style="margin-bottom:10px;">'
+          +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+            +'<span class="sp-badge" style="font-size:13px;padding:4px 10px;background:'+sp.bg+';color:'+sp.tc+';border-color:'+sp.color+';">'+sp.code+'</span>'
+            +'<div style="flex:1;"><div style="font-size:14px;font-weight:600;">'+sp.desc+'</div>'
+            +'<div style="font-size:11px;color:#888;">'+ss.done+'/'+ss.total+' tareas - '+ss.pct+'%</div></div>'
+          +'</div>'
+          +'<div class="bar-wrap" style="height:4px;margin-bottom:10px;"><div class="bar-fill" style="width:'+ss.pct+'%;background:'+sp.color+';"></div></div>';
+        stasks.sort(function(a,b){return a.date.localeCompare(b.date);}).forEach(function(t){
+          var pr=PRIO[t.priority-1];
+          var per=PERSONS.find(function(x){return x.id===t.person;});
+          var origLabel=t.original_date&&t.original_date!==''?'<span style="font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:4px;font-weight:600;">Pospuesta desde '+fmtDateShort(t.original_date)+'</span>':'';
+          cardsHtml+='<div class="report-task-row">'
+            +'<span style="font-size:9px;background:'+pr.color+';color:#fff;padding:2px 5px;border-radius:3px;font-weight:600;flex-shrink:0;margin-top:2px;">'+pr.label+'</span>'
+            +'<span style="font-size:9px;background:'+per.bg+';color:'+per.tc+';padding:2px 5px;border-radius:3px;border:1px solid '+per.color+';font-weight:600;flex-shrink:0;margin-top:2px;">'+per.initial+'</span>'
+            +'<div style="flex:1;min-width:0;">'
+              +'<div style="font-size:12px;font-weight:600;'+(t.done?'text-decoration:line-through;opacity:.5;':'')+'">'
+                +t.description+' '+origLabel
+              +'</div>'
+              +'<div style="font-size:10px;color:#888;margin-top:2px;">'+fmtDateShort(t.date)+(t.time_start?' - '+t.time_start+'-'+t.time_end:'')+'</div>'
+              +(t.notes&&t.notes.trim()?'<div style="font-size:10px;color:#166534;background:#F0FDF4;padding:3px 6px;border-radius:4px;margin-top:3px;">'+t.notes+'</div>':'')
+            +'</div>'
+            +'<span style="font-size:12px;font-weight:600;color:'+(t.done?'#27500A':'#888')+';flex-shrink:0;">'+t.pct+'%</span>'
+          +'</div>';
+        });
+        cardsHtml+='</div>';
+      });
+    }
+
+    return toggleHtml+rangeHtml+rangeSummary+cardsHtml;
+  }
+}
+
+
 function render(){
   var app=document.getElementById('app');
   if(state.view==='home'){
-    var calBody=state.mainTab==='calendario'?renderWeekTabs('home')+renderCalendar(null):renderReports();
+    var calBody=state.mainTab==='calendario'?renderWeekTabs('home')+renderCalendar(null)
+      :(state.mainTab==='historial'?renderHistory():renderReports());
     app.innerHTML=
       renderHomeStats()+
       '<div><div class="section-label">Tareas por persona - semana actual</div><div class="section-sub">Clic en una persona para ver su calendario individual</div></div>'+
@@ -761,6 +1080,7 @@ function render(){
       '<div class="main-tabs">'+
         '<button class="main-tab'+(state.mainTab==='calendario'?' active':'')+'" onclick="setMainTab(\'calendario\')">Calendario</button>'+
         '<button class="main-tab'+(state.mainTab==='reportes'?' active':'')+'" onclick="setMainTab(\'reportes\')">Reportes</button>'+
+        '<button class="main-tab'+(state.mainTab==='historial'?' active':'')+'" onclick="setMainTab(\'historial\')">Historial</button>'+
       '</div>'+
       '<div>'+calBody+'</div>';
   } else {
@@ -788,7 +1108,15 @@ function render(){
   }
 }
 
-function setMainTab(t){state.mainTab=t;render();}
+function setMainTab(t){state.mainTab=t;if(t==='historial'&&state.historyWeek===undefined)state.historyWeek=-1;render();}
+function setHistoryWeek(o){state.historyWeek=o;render();}
+function setHistoryView(v){state.historyView=v;render();}
+function setHistoryFilter(f){state.historyFilter=f;render();}
+function setReportRange(){
+  var f=document.getElementById('rep-from');
+  var t=document.getElementById('rep-to');
+  if(f&&t){state.reportFrom=parseInt(f.value);state.reportTo=parseInt(t.value);render();}
+}
 function setReportFilter(f){state.reportFilter=f;render();}
 function openPersonView(id){state.view='person';state.selectedPerson=id;state.weekOffset=0;render();}
 function goHome(){state.view='home';render();}
@@ -796,6 +1124,7 @@ function setWeek(o,v){state.weekOffset=o;state.view=v==='person'?'person':'home'
 
 document.getElementById('topbar-date').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'});
 setInterval(loadTasks,30000);
+if(!checkSession()){} // login screen shown by default
 loadTasks().then(function(){autoMoveTasks();});
 </script>
 </body>

@@ -563,7 +563,7 @@ function renderCalendar(filterPid){
   var START_H=8, END_H=19;
   var TOTAL_HOURS=END_H-START_H;
   var ROW_PX=56;   // px per hour row
-  var COL_W=540;   // min px per day column
+  var COL_W=filterPid?180:540;   // 180px individual, 540px general
 
   function tMin(str){ if(!str) return null; var p=str.split(':'); return parseInt(p[0])*60+(parseInt(p[1])||0); }
   function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }

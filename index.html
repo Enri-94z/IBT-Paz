@@ -148,7 +148,7 @@ var PASSWORDS={
   'g':'gabriela2025',
   'a':'anayeli2025',
   'f':'fernanda2025',
-  'e':'enrique2025',
+  'e':'enri007',
   'admin':'lt01admin'
 };
 
@@ -408,7 +408,11 @@ function autoMoveTasks(){
     p=p.then(function(){
       var missed=(t.missed_dates||[]).slice();
       if(missed.indexOf(t.date)<0) missed.push(t.date);
-      return updateTask(t.id,{date:today,missed_dates:missed});
+      var log=(t.postponed_log||[]).slice();
+      log.push({from:t.date,to:today,motivo:'Movida automaticamente',ts:new Date().toISOString()});
+      // Save original_date only on first postpone
+      var originalDate=t.original_date&&t.original_date!==''?t.original_date:t.date;
+      return updateTask(t.id,{date:today,missed_dates:missed,postponed_log:log,original_date:originalDate});
     });
   });
   return p;

@@ -397,8 +397,19 @@ function fmtDateShort(str){
   return d.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
 }
 function weekLabel(o){var s=getWeekStart(o),e=addDays(s,5);return fmtDate(s)+' - '+fmtDate(e);}
-function dateKey(d){return d.toISOString().slice(0,10);}
-function todayKey(){return dateKey(new Date());}
+function dateKey(d){
+  var y=d.getFullYear();
+  var m=String(d.getMonth()+1).padStart(2,'0');
+  var dd=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+dd;
+}
+function todayKey(){
+  var now=new Date();
+  var y=now.getFullYear();
+  var m=String(now.getMonth()+1).padStart(2,'0');
+  var d=String(now.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+d;
+}
 
 function autoMoveTasks(){
   var today=todayKey();
@@ -1128,6 +1139,17 @@ function setWeek(o,v){state.weekOffset=o;state.view=v==='person'?'person':'home'
 
 document.getElementById('topbar-date').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'});
 setInterval(loadTasks,30000);
+
+// Check for day change every minute — runs autoMove if date changed since last check
+var _lastCheckedDate=todayKey();
+setInterval(function(){
+  var nowDate=todayKey();
+  if(nowDate!==_lastCheckedDate){
+    _lastCheckedDate=nowDate;
+    loadTasks().then(function(){autoMoveTasks();});
+  }
+},60000);
+
 if(!checkSession()){} // login screen shown by default
 loadTasks().then(function(){autoMoveTasks();});
 </script>
